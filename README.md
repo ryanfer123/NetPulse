@@ -1,103 +1,64 @@
-<div align="center">
+# NetPulse
 
-# NetPulse - A zero-dependency macOS CLI tool for campus WiFi
+NetPulse is a lightweight, zero-dependency command-line utility that automates logging into captive portal WiFi networks (like university or corporate campus networks) from your terminal. It detects when you're behind a portal, logs in automatically, and offers a sleek dashboard to monitor your connection, speed, and data usage.
 
-**NetPulse** automatically detects when your campus captive portal blocks your internet and logs you in — silently, in the background. Built specifically for ProntoNetworks portals (like VIT).
-
-[Features](#features) • [Installation](#installation) • [Usage](#usage) • [Report Bug](https://github.com/ryanfer123/NetPulse/issues)
-
-<br>
-
-[![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](#)
-[![Bash](https://img.shields.io/badge/Shell_Script-121011?style=for-the-badge&logo=gnu-bash&logoColor=white)](#)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
-
-<br>
-</div>
+Supports **macOS** and **Linux**.
 
 ## Features
 
-- **Auto-Login:** Detects captive portal blocks and logs in automatically every 60 seconds.
-- **Live Dashboard:** Real-time monitoring of your connection, including SSID, signal strength (RSSI/SNR), and channel.
-- **Speed & Data Tracking:** Built-in Cloudflare CDN speed tests and daily data usage tracking.
-- **Secure Storage:** Credentials are saved in the macOS Keychain, never in plaintext.
-- **Background Daemon:** Runs as a macOS LaunchAgent. Starts on boot and survives network changes.
-
----
+- **Auto-Login Daemon**: Runs in the background (LaunchAgent on macOS, systemd on Linux) and automatically handles captive portals so you never have to see a login page.
+- **Fast Status Dashboard**: Real-time stats on your WiFi signal, SNR, channel, data usage, and latency.
+- **Speed Test**: Built-in CLI speed test (using Cloudflare CDN) without requiring external packages.
+- **Data Usage Tracking**: View daily download/upload totals directly from the network interface counters.
+- **Cross-Platform**: Zero external dependencies. Uses native system tools (`networksetup`, `ioreg`, `system_profiler` on macOS; `nmcli`, `ip` on Linux).
 
 ## Installation
 
-Clone the repository and run the setup script:
+Clone the repository and run the script:
 
 ```bash
 git clone https://github.com/ryanfer123/NetPulse.git
 cd NetPulse
-chmod +x wifi_autologin.sh
+
+# Make it executable
+chmod +x netpulse.sh
+
+# (Optional) Add an alias to your shell profile for easy access
+echo 'alias netpulse="/path/to/NetPulse/netpulse.sh"' >> ~/.zshrc
+source ~/.zshrc
 ```
 
-### Setup
+## Setup
 
-1. **Store your credentials:**
-   ```bash
-   ./wifi_autologin.sh setup
-   ```
-   *Your username and password are encrypted and stored in your macOS Keychain.*
+First, save your WiFi credentials securely.
+On macOS, this uses the native Keychain. On Linux, it saves to a restricted file (`~/.netpulse-credentials` with 600 permissions).
 
-2. **Install the background service:**
-   ```bash
-   ./wifi_autologin.sh install
-   ```
-
-3. **(Optional) Add to your PATH:**
-   ```bash
-   mkdir -p ~/.local/bin
-   ln -sf "$(pwd)/wifi_autologin.sh" ~/.local/bin/vitwifi
-   ```
-
----
+```bash
+netpulse setup
+```
+*It will ask for your username and password.*
 
 ## Usage
 
-Run `vitwifi` (or `./wifi_autologin.sh`) to open the interactive menu.
-
-```text
-  WiFi        T-VIT  ▂▄▆█  (-54 dBm)
-  Internet    ● Online
-  Data Today  ↓58.2 MB  ↑61.2 MB
-  User        24BCE0605  ✓
-  Daemon      ● Running
-
-  1  Setup credentials
-  2  Login now
-  3  Full network status
-  4  Speed test
-  5  Data usage
-  6  Live dashboard
-  7  Install background service
-  8  View logs
-  9  Uninstall service
-
-  q  Quit
-```
-
-### Direct Commands
-
-You can bypass the menu by passing arguments directly:
-
-- `vitwifi status` - View detailed network stats (PHY mode, TX rate, etc.)
-- `vitwifi speedtest` - Run a download/upload speed test
-- `vitwifi data` - Check your daily bandwidth usage
-- `vitwifi dashboard` - Open the live auto-refreshing dashboard
-- `vitwifi logs` - View the background service logs
-
----
-
-## Configuration
-
-By default, NetPulse targets the `T-VIT` network and the ProntoNetworks portal. If you need to adapt this for a different campus, open `wifi_autologin.sh` and edit the configuration block at the top:
+Simply run `netpulse` to open the interactive menu. Alternatively, use the direct commands below:
 
 ```bash
-TARGET_SSID="T-VIT"
-PORTAL_URL="http://phc.prontonetworks.com/cgi-bin/authlogin"
-CHECK_INTERVAL=60
+netpulse                # Open interactive menu
+netpulse status         # Print detailed network status
+netpulse dashboard      # Open live-updating network monitor
+netpulse speedtest      # Run a quick ping/download/upload test
+netpulse data           # View data usage statistics
+netpulse install        # Install the auto-login background daemon
+netpulse uninstall      # Remove the background daemon
+netpulse logs           # View logs from the background daemon
 ```
+
+## How the Background Daemon Works
+
+When you run `netpulse install`, it creates a background service (`launchd` for macOS, `systemd` for Linux) that runs every 60 seconds. 
+
+The daemon checks if you are connected to the target network. If you are, it makes a lightweight HTTP request to detect a captive portal block. If a block is detected, it securely fetches your credentials and submits the login payload automatically. It uses an exponential backoff if logins fail.
+
+## License
+
+MIT License
