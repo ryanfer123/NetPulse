@@ -18,10 +18,12 @@ KEYCHAIN_SERVICE="netpulse-autologin"
 KEYCHAIN_ACCOUNT_USER="wifi-username"
 KEYCHAIN_ACCOUNT_PASS="wifi-password"
 KEYCHAIN_ACCOUNT_SSID="wifi-target-ssid"
+KEYCHAIN_ACCOUNT_DATALIMIT="wifi-data-limit"
 CRED_FILE="$HOME/.netpulse-credentials"
 CHECK_INTERVAL=60
 LOG_FILE="$HOME/.netpulse-autologin.log"
 DATA_FILE="$HOME/.netpulse-data-usage.dat"
+DATA_HISTORY="$HOME/.netpulse-history.dat"
 LAUNCHAGENT_LABEL="com.user.netpulse"
 LAUNCHAGENT_PLIST="$HOME/Library/LaunchAgents/${LAUNCHAGENT_LABEL}.plist"
 SYSTEMD_SERVICE="netpulse.service"
@@ -34,6 +36,9 @@ OS=$(uname -s)
 # Load target SSID from credentials, fallback to T-VIT
 TARGET_SSID=$(get_credential "$KEYCHAIN_ACCOUNT_SSID" 2>/dev/null || true)
 [[ -z "$TARGET_SSID" ]] && TARGET_SSID="T-VIT"
+
+# Load data limit from credentials
+DATA_LIMIT=$(get_credential "$KEYCHAIN_ACCOUNT_DATALIMIT" 2>/dev/null || true)
 
 # ── ANSI Colors ─────────────────────────────────────────────────────────────
 RST='\033[0m'; BOLD='\033[1m'; DIM='\033[2m'
@@ -65,6 +70,15 @@ notify() {
     fi
 }
 
+is_target_ssid() {
+    local s
+    IFS=',' read -ra ssid_array <<< "$TARGET_SSID"
+    for s in "${ssid_array[@]}"; do
+        [[ "$1" == "$s" ]] && return 0
+    done
+    return 1
+}
+
 # ── Human-readable byte formatting ─────────────────────────────────────────
 format_bytes() {
     local bytes="$1"
@@ -87,6 +101,37 @@ format_speed() {
         printf "%.0f Kbps" "$(echo "scale=0; $bps*8/1000" | bc)"
     else
         printf "%.0f bps" "$(echo "scale=0; $bps*8" | bc)"
+    fi
+}
+
+generate_sparkline() {
+    local numbers=("$@")
+    local max=0
+    for n in "${numbers[@]}"; do
+        (( n > max )) && max=$n
+    done
+    [[ "$max" -eq 0 ]] && max=1
+    
+    local sparks=(" " "▂" "▃" "▄" "▅" "▆" "▇" "█")
+    local spark_str=""
+    for n in "${numbers[@]}"; do
+        local idx=$(( (n * 7) / max ))
+        [[ $idx -lt 0 ]] && idx=0
+        [[ $idx -gt 7 ]] && idx=7
+        spark_str+="${sparks[$idx]}"
+    done
+    echo "$spark_str"
+}
+
+get_historical_usage() {
+    [[ ! -f "$DATA_HISTORY" ]] && return
+    local usage_array=()
+    while read -r date bytes; do
+        usage_array+=("$bytes")
+    done < <(tail -n 7 "$DATA_HISTORY")
+    
+    if [[ ${#usage_array[@]} -gt 0 ]]; then
+        generate_sparkline "${usage_array[@]}"
     fi
 }
 
@@ -322,10 +367,22 @@ init_data_tracking() {
         # Reset daily tracking if new day
         local saved_today
         saved_today=$(grep '^today=' "$DATA_FILE" 2>/dev/null | cut -d= -f2)
-        if [[ "$saved_today" != "$today" ]]; then
+        if [[ -n "$saved_today" && "$saved_today" != "$today" ]]; then
+            local old_in; old_in=$(grep '^today_start_in=' "$DATA_FILE" | cut -d= -f2)
+            local old_out; old_out=$(grep '^today_start_out=' "$DATA_FILE" | cut -d= -f2)
+            local c_in; c_in=$(echo "$now_bytes" | awk '{print $1}')
+            local c_out; c_out=$(echo "$now_bytes" | awk '{print $2}')
+            
+            local used_in=$(( c_in - old_in ))
+            [[ $used_in -lt 0 ]] && used_in=$c_in
+            local used_out=$(( c_out - old_out ))
+            [[ $used_out -lt 0 ]] && used_out=$c_out
+            
+            echo "$saved_today $((used_in + used_out))" >> "$DATA_HISTORY"
+
             sed -i.bak "s/^today=.*/today=$today/" "$DATA_FILE"
-            sed -i.bak "s/^today_start_in=.*/today_start_in=$(echo "$now_bytes" | awk '{print $1}')/" "$DATA_FILE"
-            sed -i.bak "s/^today_start_out=.*/today_start_out=$(echo "$now_bytes" | awk '{print $2}')/" "$DATA_FILE"
+            sed -i.bak "s/^today_start_in=.*/today_start_in=$c_in/" "$DATA_FILE"
+            sed -i.bak "s/^today_start_out=.*/today_start_out=$c_out/" "$DATA_FILE"
             rm -f "${DATA_FILE}.bak" 2>/dev/null
         fi
     fi
@@ -372,6 +429,23 @@ show_data_usage() {
     printf "    ${DIM}%-10s${RST} ${BGRN}↓${RST} ${WHT}%-12s${RST}  ${BCYN}↑${RST} ${WHT}%-12s${RST}  ${DIM}Total${RST} ${BOLD}%s${RST}\n" \
         "" "$(format_bytes "$day_in")" "$(format_bytes "$day_out")" "$(format_bytes "$day_total")"
     echo ""
+    
+    # History Sparkline
+    local spark; spark=$(get_historical_usage)
+    if [[ -n "$spark" ]]; then
+        local usage_array=()
+        if [[ -f "$DATA_HISTORY" ]]; then
+            while read -r _ bytes; do
+                usage_array+=("$bytes")
+            done < <(tail -n 6 "$DATA_HISTORY")
+        fi
+        usage_array+=("$day_total")
+        spark=$(generate_sparkline "${usage_array[@]}")
+        
+        printf "  ${BOLD}Past 7 Days Trend${RST}\n"
+        printf "    ${BCYN}%s${RST}\n" "$spark"
+        echo ""
+    fi
 
     # Since boot (total interface counters)
     local boot_total=$(( total_in + total_out ))
@@ -452,6 +526,38 @@ cmd_speedtest() {
     log "Speed test: ↓$dl_formatted ↑$ul_formatted ping:${avg_ping}ms"
 }
 
+# ── Ping Monitor ────────────────────────────────────────────────────────────
+cmd_ping_monitor() {
+    echo -e "\n  ${BRAND}${BOLD}NetPulse · Connection Monitor${RST}"
+    echo -e "  ${DIM}Pinging 8.8.8.8... Press Ctrl+C to stop.${RST}\n"
+    
+    if ! has_internet; then
+        echo -e "  ${RED}✗ No internet connection.${RST}\n"
+        return 1
+    fi
+
+    local ping_arg=""
+    [[ "$OS" == "Linux" ]] && ping_arg="-O" # Print failures on Linux
+
+    ping $ping_arg 8.8.8.8 | while read -r line; do
+        if echo "$line" | grep -q "time="; then
+            local time_ms; time_ms=$(echo "$line" | sed -n 's/.*time=\([0-9.]*\) ms.*/\1/p')
+            local color="$BGRN"
+            (( $(echo "$time_ms > 50" | bc -l 2>/dev/null || echo 0) )) && color="$YEL"
+            (( $(echo "$time_ms > 150" | bc -l 2>/dev/null || echo 0) )) && color="$RED"
+            
+            # Simple bar
+            local bar_len=$(echo "scale=0; $time_ms / 10" | bc 2>/dev/null || echo 1)
+            [[ $bar_len -gt 40 ]] && bar_len=40
+            local bar=$(repeat_char '■' "$bar_len")
+            
+            printf "  ${DIM}[%s]${RST}  ${color}%5.1f ms${RST}  ${color}%s${RST}\n" "$(short_time)" "$time_ms" "$bar"
+        elif echo "$line" | grep -qi "timeout\|unreachable\|loss"; then
+            printf "  ${DIM}[%s]${RST}  ${BRED}❌ PACKET LOSS${RST}  %s\n" "$(short_time)" "$line"
+        fi
+    done
+}
+
 # ── Login ───────────────────────────────────────────────────────────────────
 do_login() {
     local username password
@@ -492,9 +598,9 @@ do_check_and_login() {
     rotate_log
     local ssid; ssid=$(get_ssid_fast)
     [[ -z "$ssid" ]] && return 0
-    [[ "$ssid" != "$TARGET_SSID" ]] && return 0
+    is_target_ssid "$ssid" || return 0
     has_internet && return 0
-    log "Captive portal detected on '$TARGET_SSID'."
+    log "Captive portal detected on '$ssid'."
     do_login
 }
 
@@ -583,16 +689,20 @@ cmd_setup() {
     echo ""
     read -rp "$(echo -e "  ${BOLD}Username ${DIM}(e.g. 24BCE0605)${RST}${BOLD}: ")" wifi_user
     read -rsp "$(echo -e "  ${BOLD}Password${RST}${BOLD}: ")" wifi_pass; echo ""; echo ""
-    read -rp "$(echo -e "  ${BOLD}Target SSID ${DIM}(default: T-VIT)${RST}${BOLD}: ")" wifi_ssid; echo ""
+    read -rp "$(echo -e "  ${BOLD}Target SSIDs ${DIM}(comma-separated, default: T-VIT)${RST}${BOLD}: ")" wifi_ssid; echo ""
+    read -rp "$(echo -e "  ${BOLD}Daily Data Limit in MB ${DIM}(leave blank for none)${RST}${BOLD}: ")" wifi_limit; echo ""
+    
     [[ -z "$wifi_user" || -z "$wifi_pass" ]] && { echo -e "  ${RED}✗ Username and Password cannot be empty.${RST}"; return 1; }
     [[ -z "$wifi_ssid" ]] && wifi_ssid="T-VIT"
     
     store_credential "$KEYCHAIN_ACCOUNT_USER" "$wifi_user"
     store_credential "$KEYCHAIN_ACCOUNT_PASS" "$wifi_pass"
     store_credential "$KEYCHAIN_ACCOUNT_SSID" "$wifi_ssid"
+    store_credential "$KEYCHAIN_ACCOUNT_DATALIMIT" "$wifi_limit"
     TARGET_SSID="$wifi_ssid"
+    DATA_LIMIT="$wifi_limit"
     
-    echo -e "  ${BGRN}${BOLD}✓ Credentials and SSID saved${RST}"; echo ""
+    echo -e "  ${BGRN}${BOLD}✓ Setup complete!${RST}"; echo ""
 }
 
 cmd_login() {
@@ -603,8 +713,10 @@ cmd_login() {
     has_credentials || { echo -e "  ${RED}✗ Run: netpulse setup${RST}"; echo ""; return 1; }
     local ssid; ssid=$(get_ssid_fast)
     echo -e "  ${DIM}Network:${RST}  ${BOLD}${ssid:-Not connected}${RST}"
-    [[ -z "$ssid" ]] && { echo -e "  ${RED}✗ Not connected to WiFi.${RST}"; echo ""; return 1; }
-    [[ "$ssid" != "$TARGET_SSID" ]] && { echo -e "  ${YEL}⚠  Not on ${TARGET_SSID}.${RST}"; echo ""; return 0; }
+    if [[ -z "$ssid" ]]; then
+        echo -e "  ${RED}✗ Not connected to any WiFi.${RST}"; echo ""; return 0
+    fi
+    is_target_ssid "$ssid" || { echo -e "  ${YEL}⚠  Not on a target network (${TARGET_SSID:-T-VIT}).${RST}"; echo ""; return 0; }
     has_internet && { echo -e "  ${BGRN}✓ Already online!${RST}"; echo ""; return 0; }
     echo -e "  ${YEL}⟳ Logging in...${RST}"; echo ""
     do_login && echo -e "  ${BGRN}${BOLD}✓ Connected!${RST}" || echo -e "  ${RED}${BOLD}✗ Failed.${RST}"
@@ -630,9 +742,9 @@ cmd_status() {
 
     echo -e "  ${BOLD}${WHT}📡 WIRELESS${RST}"
     if [[ -n "$ssid" ]]; then
-        local sc="$WHT"; [[ "$ssid" == "$TARGET_SSID" ]] && sc="$BGRN"
-        printf "  ${DIM}%-14s${RST} ${sc}${BOLD}%s${RST}" "Network" "$ssid"
-        [[ "$ssid" == "$TARGET_SSID" ]] && printf "  ${BGRN}★${RST}"; echo ""
+        local sc="$WHT"; is_target_ssid "$ssid" && sc="$BGRN"
+        printf "  ${DIM}%-14s${RST} ${sc}${BOLD}%s${RST}" "SSID" "$ssid"
+        is_target_ssid "$ssid" && printf "  ${BGRN}★${RST}"; echo ""
 
         if [[ -n "$rssi" && "$rssi" =~ ^-?[0-9]+$ ]]; then
             printf "  ${DIM}%-14s${RST} " "Signal"; signal_bar_graph "$rssi"; echo ""
@@ -733,9 +845,9 @@ H
         echo -e "  ${BOLD}${WHT}📡 WIRELESS${RST}"
         echo -e "  ${DIM}$(repeat_char '─' 50)${RST}"
         if [[ -n "$ssid" ]]; then
-            local sc="$WHT"; [[ "$ssid" == "$TARGET_SSID" ]] && sc="$BGRN"
-            printf "  ${DIM}%-14s${RST} ${sc}${BOLD}%s${RST}" "Network" "$ssid"
-            [[ "$ssid" == "$TARGET_SSID" ]] && printf "  ${BGRN}★${RST}"; echo ""
+            local sc="$WHT"; is_target_ssid "$ssid" && sc="$BGRN"
+            printf "  ${DIM}%-14s${RST} ${sc}${BOLD}%s${RST}" "SSID" "$ssid"
+            is_target_ssid "$ssid" && printf "  ${BGRN}★${RST}"; echo ""
             if [[ -n "$rssi" && "$rssi" =~ ^-?[0-9]+$ ]]; then
                 printf "  ${DIM}%-14s${RST} " "Signal"; signal_bar_graph "$rssi"; echo ""
                 printf "  ${DIM}%-14s${RST} ${WHT}%s dBm${RST}" "RSSI" "$rssi"
@@ -807,8 +919,9 @@ H
         echo -e "  ${DIM}Refreshes every ${CHECK_INTERVAL}s${RST}  ${DIM}│${RST}  ${BOLD}Ctrl+C${RST} ${DIM}to exit${RST}"
 
         # Auto-login
-        if [[ "$portal_active" == true ]] && has_credentials && [[ "$ssid" == "$TARGET_SSID" ]]; then
-            log "Dashboard: auto-login triggered."
+        if [[ "$portal_active" == true ]] && has_credentials && is_target_ssid "$ssid"; then
+            echo -e "  ${DIM}$(repeat_char '─' 42)${RST}"
+            echo -ne "  ${BGRN}Portal detected! Auto-logging in...${RST} "
             do_login && { ((login_count++)) || true; last_login=$(short_time); }
         fi
 
@@ -829,6 +942,29 @@ cmd_daemon() {
     local fc=0
     while true; do
         do_check_and_login && fc=0 || ((fc++)) || true
+        
+        # Keep-alive
+        local ssid; ssid=$(get_ssid_fast)
+        if has_internet && is_target_ssid "$ssid"; then
+            curl -I https://1.1.1.1 --connect-timeout 2 -s -o /dev/null || true
+        fi
+        
+        # Data limit check
+        if [[ -n "${DATA_LIMIT:-}" && "$DATA_LIMIT" =~ ^[0-9]+$ ]]; then
+            local usage; usage=$(get_data_usage)
+            local _1 _2 ti to; read -r _1 _2 ti to _ _ <<< "$usage"
+            local today_mb=$(( (ti + to) / 1048576 ))
+            if (( today_mb >= DATA_LIMIT )); then
+                if [[ ! -f "/tmp/.netpulse-data-warned" ]]; then
+                    notify "⚠️ Data Limit Exceeded ($today_mb MB / $DATA_LIMIT MB)"
+                    log_warn "Data limit ($DATA_LIMIT MB) exceeded."
+                    touch "/tmp/.netpulse-data-warned"
+                fi
+            else
+                rm -f "/tmp/.netpulse-data-warned" 2>/dev/null
+            fi
+        fi
+
         local st=$CHECK_INTERVAL
         (( fc > 3 )) && { st=$(( CHECK_INTERVAL * (2**(fc-3)) )); (( st > 300 )) && st=300; log_warn "Backoff: ${st}s (fails=$fc)"; }
         sleep "$st"
@@ -873,10 +1009,17 @@ cmd_manage_login() {
 cmd_diagnostics() {
     cmd_status
     echo ""
-    read -rp "$(echo -e "  ${BOLD}Run speed test? [y/N]: ${RST}")" run_st
-    if [[ "$run_st" =~ ^[Yy]$ ]]; then
-        cmd_speedtest
-    fi
+    echo -e "  ${BOLD}Run Diagnostics:${RST}"
+    echo -e "    ${BCYN}${BOLD}1${RST}  Run speed test"
+    echo -e "    ${BCYN}${BOLD}2${RST}  Live Ping Monitor"
+    echo -e "    ${DIM}${BOLD}b${RST}  ${DIM}Skip${RST}\n"
+    read -rp "$(echo -e "  ${BOLD}→ ${RST}")" diag_choice
+    
+    case "$diag_choice" in
+        1) cmd_speedtest ;;
+        2) cmd_ping_monitor ;;
+        *) return ;;
+    esac
 }
 
 cmd_manage_daemon() {
@@ -988,6 +1131,7 @@ case "${1:-}" in
     login|--login|-l)        cmd_login ;;
     status|--status)         cmd_status ;;
     speedtest|--speedtest)   cmd_speedtest ;;
+    ping|--ping)             cmd_ping_monitor ;;
     data|--data)             show_data_usage ;;
     dashboard|--dashboard)   cmd_dashboard ;;
     logs|--logs)             cmd_logs ;;
