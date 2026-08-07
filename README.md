@@ -246,10 +246,10 @@ NetPulse works with any **ProntoNetworks** captive portal. To adapt for your cam
 
 ## 📜 License
 
-MIT License — use it, fork it, share it.
+MIT License
 
 ---
 
 <p align="center">
-  <b>Built with ☕ at VIT Vellore</b>
+  <b>Built by Ryan ☕️</b>
 </p>
