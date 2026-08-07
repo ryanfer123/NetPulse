@@ -17,9 +17,9 @@ SERVICE_NAME="ProntoAuthentication"
 KEYCHAIN_SERVICE="netpulse-autologin"
 KEYCHAIN_ACCOUNT_USER="wifi-username"
 KEYCHAIN_ACCOUNT_PASS="wifi-password"
+KEYCHAIN_ACCOUNT_SSID="wifi-target-ssid"
 CRED_FILE="$HOME/.netpulse-credentials"
 CHECK_INTERVAL=60
-TARGET_SSID="T-VIT"
 LOG_FILE="$HOME/.netpulse-autologin.log"
 DATA_FILE="$HOME/.netpulse-data-usage.dat"
 LAUNCHAGENT_LABEL="com.user.netpulse"
@@ -30,6 +30,10 @@ VERSION="3.0.0"
 SP_CACHE_FILE="/tmp/.netpulse-cache"
 
 OS=$(uname -s)
+
+# Load target SSID from credentials, fallback to T-VIT
+TARGET_SSID=$(get_credential "$KEYCHAIN_ACCOUNT_SSID" 2>/dev/null || true)
+[[ -z "$TARGET_SSID" ]] && TARGET_SSID="T-VIT"
 
 # ── ANSI Colors ─────────────────────────────────────────────────────────────
 RST='\033[0m'; BOLD='\033[1m'; DIM='\033[2m'
@@ -579,10 +583,16 @@ cmd_setup() {
     echo ""
     read -rp "$(echo -e "  ${BOLD}Username ${DIM}(e.g. 24BCE0605)${RST}${BOLD}: ")" wifi_user
     read -rsp "$(echo -e "  ${BOLD}Password${RST}${BOLD}: ")" wifi_pass; echo ""; echo ""
-    [[ -z "$wifi_user" || -z "$wifi_pass" ]] && { echo -e "  ${RED}✗ Cannot be empty.${RST}"; return 1; }
+    read -rp "$(echo -e "  ${BOLD}Target SSID ${DIM}(default: T-VIT)${RST}${BOLD}: ")" wifi_ssid; echo ""
+    [[ -z "$wifi_user" || -z "$wifi_pass" ]] && { echo -e "  ${RED}✗ Username and Password cannot be empty.${RST}"; return 1; }
+    [[ -z "$wifi_ssid" ]] && wifi_ssid="T-VIT"
+    
     store_credential "$KEYCHAIN_ACCOUNT_USER" "$wifi_user"
     store_credential "$KEYCHAIN_ACCOUNT_PASS" "$wifi_pass"
-    echo -e "  ${BGRN}${BOLD}✓ Credentials saved${RST}"; echo ""
+    store_credential "$KEYCHAIN_ACCOUNT_SSID" "$wifi_ssid"
+    TARGET_SSID="$wifi_ssid"
+    
+    echo -e "  ${BGRN}${BOLD}✓ Credentials and SSID saved${RST}"; echo ""
 }
 
 cmd_login() {
