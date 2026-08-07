@@ -26,7 +26,7 @@ LAUNCHAGENT_LABEL="com.user.netpulse"
 LAUNCHAGENT_PLIST="$HOME/Library/LaunchAgents/${LAUNCHAGENT_LABEL}.plist"
 SYSTEMD_SERVICE="netpulse.service"
 MAX_LOG_LINES=1000
-VERSION="3.0.0"
+VERSION="3.1.0"
 SP_CACHE_FILE="/tmp/.netpulse-cache"
 
 OS=$(uname -s)
@@ -851,6 +851,52 @@ B
     echo ""
 }
 
+# ── Interactive Sub-menus ───────────────────────────────────────────────────
+cmd_manage_login() {
+    if has_credentials; then
+        echo -e "\n  ${BRAND}${BOLD}NetPulse · Login Management${RST}\n"
+        echo -e "    ${BCYN}${BOLD}1${RST}  Login now"
+        echo -e "    ${BCYN}${BOLD}2${RST}  Reconfigure credentials"
+        echo -e "    ${DIM}${BOLD}b${RST}  ${DIM}Back${RST}\n"
+        read -rp "$(echo -e "  ${BOLD}→ ${RST}")" sub_choice
+        case "$sub_choice" in
+            1) cmd_login; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
+            2) cmd_setup; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
+            *) return ;;
+        esac
+    else
+        cmd_setup
+        echo -e "  ${DIM}Press Enter...${RST}"; read -r
+    fi
+}
+
+cmd_diagnostics() {
+    cmd_status
+    echo ""
+    read -rp "$(echo -e "  ${BOLD}Run speed test? [y/N]: ${RST}")" run_st
+    if [[ "$run_st" =~ ^[Yy]$ ]]; then
+        cmd_speedtest
+    fi
+}
+
+cmd_manage_daemon() {
+    if is_daemon_running || [[ -f "$LAUNCHAGENT_PLIST" ]] || [[ -f "$HOME/.config/systemd/user/${SYSTEMD_SERVICE}" ]]; then
+        echo -e "\n  ${BRAND}${BOLD}NetPulse · Daemon Management${RST}\n"
+        echo -e "    ${BCYN}${BOLD}1${RST}  View live logs"
+        echo -e "    ${RED}${BOLD}2${RST}  Uninstall daemon"
+        echo -e "    ${DIM}${BOLD}b${RST}  ${DIM}Back${RST}\n"
+        read -rp "$(echo -e "  ${BOLD}→ ${RST}")" sub_choice
+        case "$sub_choice" in
+            1) cmd_logs ;;
+            2) cmd_uninstall; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
+            *) return ;;
+        esac
+    else
+        cmd_install
+        echo -e "  ${DIM}Press Enter...${RST}"; read -r
+    fi
+}
+
 # ── Interactive Menu (loops until quit) ─────────────────────────────────────
 cmd_interactive() {
     init_data_tracking
@@ -911,18 +957,13 @@ B
         echo -e "  ${BOLD}Select an option:${RST}\n"
 
         if ! has_credentials; then
-            echo -e "    ${BGRN}${BOLD}1${RST}  Setup credentials       ${DIM}← start here${RST}"
+            echo -e "    ${BGRN}${BOLD}1${RST}  Manage Login & Credentials  ${DIM}← start here${RST}"
         else
-            echo -e "    ${BCYN}${BOLD}1${RST}  Setup credentials"
+            echo -e "    ${BCYN}${BOLD}1${RST}  Manage Login & Credentials"
         fi
-        echo -e "    ${BCYN}${BOLD}2${RST}  Login now"
-        echo -e "    ${BCYN}${BOLD}3${RST}  Full network status"
-        echo -e "    ${BCYN}${BOLD}4${RST}  Speed test              ${DIM}↓↑ Mbps${RST}"
-        echo -e "    ${BCYN}${BOLD}5${RST}  Data usage              ${DIM}📊${RST}"
-        echo -e "    ${BCYN}${BOLD}6${RST}  Live dashboard"
-        echo -e "    ${BCYN}${BOLD}7${RST}  Install background service"
-        echo -e "    ${BCYN}${BOLD}8${RST}  View logs"
-        echo -e "    ${BCYN}${BOLD}9${RST}  Uninstall service"
+        echo -e "    ${BCYN}${BOLD}2${RST}  Network Diagnostics"
+        echo -e "    ${BCYN}${BOLD}3${RST}  Live Dashboard"
+        echo -e "    ${BCYN}${BOLD}4${RST}  Background Service (Daemon)"
         echo ""
         echo -e "    ${DIM}${BOLD}q${RST}  ${DIM}Quit${RST}"
         echo ""
@@ -930,15 +971,10 @@ B
         read -rp "$(echo -e "  ${BOLD}→ ${RST}")" choice
 
         case "$choice" in
-            1) cmd_setup;      echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
-            2) cmd_login;      echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
-            3) cmd_status;     echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
-            4) cmd_speedtest;  echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
-            5) show_data_usage; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
-            6) cmd_dashboard ;;
-            7) cmd_install;    echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
-            8) cmd_logs ;;
-            9) cmd_uninstall;  echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
+            1) cmd_manage_login ;;
+            2) cmd_diagnostics; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
+            3) cmd_dashboard ;;
+            4) cmd_manage_daemon ;;
             q|Q|exit) echo -e "\n  ${DIM}Goodbye! 👋${RST}\n"; exit 0 ;;
             "") _refresh_sp_background ;;
             *) echo -e "  ${RED}Invalid.${RST}"; sleep 0.5 ;;
