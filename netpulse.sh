@@ -28,7 +28,7 @@ LAUNCHAGENT_LABEL="com.user.netpulse"
 LAUNCHAGENT_PLIST="$HOME/Library/LaunchAgents/${LAUNCHAGENT_LABEL}.plist"
 SYSTEMD_SERVICE="netpulse.service"
 MAX_LOG_LINES=1000
-VERSION="3.1.0"
+VERSION="4.0.1"
 SP_CACHE_FILE="/tmp/.netpulse-cache"
 
 OS=$(uname -s)
@@ -289,7 +289,18 @@ get_security() {
 
 # ── Internet checks ────────────────────────────────────────────────────────
 has_internet() {
-    curl -s -m 3 "http://www.google.com/generate_204" -o /dev/null -w '%{http_code}' 2>/dev/null | grep -q "204"
+    # Check 1: Google 204
+    local c1; c1=$(curl -s -m 3 "http://www.gstatic.com/generate_204" -o /dev/null -w '%{http_code}' 2>/dev/null)
+    [[ "$c1" == "204" ]] && return 0
+    
+    # Check 2: Apple captive test
+    local c2; c2=$(curl -s -m 3 "http://captive.apple.com/hotspot-detect.html" 2>/dev/null || true)
+    echo "$c2" | grep -qi "Success" && return 0
+    
+    # Check 3: Cloudflare HTTPS
+    curl -I -s -m 3 "https://1.1.1.1" -o /dev/null 2>/dev/null && return 0
+    
+    return 1
 }
 
 is_captive_portal_active() {
