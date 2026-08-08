@@ -290,15 +290,15 @@ get_security() {
 # ── Internet checks ────────────────────────────────────────────────────────
 has_internet() {
     # Check 1: Google 204
-    local c1; c1=$(curl -s -m 3 "http://www.gstatic.com/generate_204" -o /dev/null -w '%{http_code}' 2>/dev/null)
+    local c1; c1=$(curl -s -m 5 "http://www.gstatic.com/generate_204" -o /dev/null -w '%{http_code}' 2>/dev/null)
     [[ "$c1" == "204" ]] && return 0
     
     # Check 2: Apple captive test
-    local c2; c2=$(curl -s -m 3 "http://captive.apple.com/hotspot-detect.html" 2>/dev/null || true)
+    local c2; c2=$(curl -s -m 5 "http://captive.apple.com/hotspot-detect.html" 2>/dev/null || true)
     echo "$c2" | grep -qi "Success" && return 0
     
     # Check 3: Cloudflare HTTPS
-    curl -I -s -m 3 "https://1.1.1.1" -o /dev/null 2>/dev/null && return 0
+    curl -I -s -m 5 "https://1.1.1.1" -o /dev/null 2>/dev/null && return 0
     
     return 1
 }
