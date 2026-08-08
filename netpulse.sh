@@ -27,10 +27,13 @@ LAUNCHAGENT_LABEL="com.user.netpulse"
 LAUNCHAGENT_PLIST="$HOME/Library/LaunchAgents/${LAUNCHAGENT_LABEL}.plist"
 SYSTEMD_SERVICE="netpulse.service"
 MAX_LOG_LINES=1000
-VERSION="5.0.6"
+VERSION="5.0.4"
 SP_CACHE_FILE="/tmp/.netpulse-cache"
 
 OS=$(uname -s)
+if [[ "$OS" == MINGW* || "$OS" == MSYS* || "$OS" == CYGWIN* ]]; then
+    OS="Windows"
+fi
 
 # NOTE: TARGET_SSID and DATA_LIMIT are loaded after get_credential() is defined below.
 
@@ -162,17 +165,21 @@ DATA_LIMIT=$(get_credential "$KEYCHAIN_ACCOUNT_DATALIMIT" 2>/dev/null || true)
 # ── Fast WiFi Info (ioreg / nmcli) ──────────────────────────────────────────
 get_ssid_fast() {
     if [[ "$OS" == "Darwin" ]]; then
-        ioreg -l -n AirPortDriver 2>/dev/null | awk -F'"' '/IO80211SSID" =/{print $4; exit}'
+        /System/Library/PrivateFrameworks/Apple80211.framework/Resources/airport -I 2>/dev/null | awk -F': ' '/ SSID/{print $2}'
+    elif [[ "$OS" == "Windows" ]]; then
+        netsh wlan show interfaces 2>/dev/null | awk -F': ' '/^    SSID/{print $2}' | tr -d '\r'
     else
-        nmcli -t -f active,ssid dev wifi 2>/dev/null | awk -F: '/^yes/{print $2; exit}'
+        iwgetid -r 2>/dev/null || nmcli -t -f active,ssid dev wifi 2>/dev/null | egrep '^yes' | cut -d\' -f2 | cut -d: -f2
     fi
 }
 
 get_wifi_interface() {
     if [[ "$OS" == "Darwin" ]]; then
         networksetup -listallhardwareports 2>/dev/null | awk '/Wi-Fi|AirPort/{getline; print $2}'
+    elif [[ "$OS" == "Windows" ]]; then
+        netsh wlan show interfaces 2>/dev/null | awk -F': ' '/^    Name/{print $2}' | tr -d '\r'
     else
-        ip route 2>/dev/null | awk '/default/ {print $5; exit}'
+        iw dev 2>/dev/null | awk '$1=="Interface"{print $2}' || nmcli -t -f DEVICE,TYPE dev 2>/dev/null | awk -F: '$2=="wifi"{print $1}' | head -n 1
     fi
 }
 
@@ -180,6 +187,8 @@ get_local_ip() {
     local iface; iface=$(get_wifi_interface)
     if [[ "$OS" == "Darwin" ]]; then
         [[ -n "$iface" ]] && ipconfig getifaddr "$iface" 2>/dev/null
+    elif [[ "$OS" == "Windows" ]]; then
+        ipconfig 2>/dev/null | awk '/IPv4 Address/ {print $NF}' | tr -d '\r' | head -n 1
     else
         [[ -n "$iface" ]] && ip -4 addr show dev "$iface" 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1
     fi
@@ -188,6 +197,8 @@ get_local_ip() {
 get_gateway() {
     if [[ "$OS" == "Darwin" ]]; then
         netstat -rn 2>/dev/null | awk '/default.*en/{print $2; exit}'
+    elif [[ "$OS" == "Windows" ]]; then
+        ipconfig 2>/dev/null | awk '/Default Gateway/ {print $NF}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | tr -d '\r' | head -n 1
     else
         ip route 2>/dev/null | awk '/default/ {print $3; exit}'
     fi
@@ -203,7 +214,11 @@ get_dns_servers() {
 
 get_mac_address() {
     local iface; iface=$(get_wifi_interface)
-    [[ -n "$iface" ]] && ifconfig "$iface" 2>/dev/null | awk '/ether/{print $2}' || ip link show dev "$iface" 2>/dev/null | awk '/link\/ether/ {print $2}'
+    if [[ "$OS" == "Windows" ]]; then
+        getmac /v /fo csv 2>/dev/null | grep -i "wi-fi" | cut -d, -f3 | tr -d '\"\r'
+    else
+        [[ -n "$iface" ]] && ifconfig "$iface" 2>/dev/null | awk '/ether/{print $2}' || ip link show dev "$iface" 2>/dev/null | awk '/link\/ether/ {print $2}'
+    fi
 }
 
 # ── Detailed WiFi Info (cached) ─────────────────────────────────────────────
@@ -225,6 +240,8 @@ _load_sp_data() {
     fi
     if [[ "$OS" == "Darwin" ]]; then
         _sp_data=$(system_profiler SPAirPortDataType 2>/dev/null)
+    elif [[ "$OS" == "Windows" ]]; then
+        _sp_data=$(netsh wlan show interfaces 2>/dev/null | tr -d '\r')
     else
         _sp_data=$(nmcli -t -f all dev wifi 2>/dev/null)
     fi
@@ -243,8 +260,10 @@ get_rssi() {
     if [[ "$OS" == "Darwin" ]]; then
         local sn; sn=$(echo "$_sp_data" | awk '/Current Network Information:/ { f=1; next } f && /Signal \/ Noise:/ { sub(/.*: /, ""); print; exit }')
         echo "$sn" | awk -F'/' '{gsub(/[^0-9-]/,"",$1); print $1}'
+    elif [[ "$OS" == "Windows" ]]; then
+        local sig=$(echo "$_sp_data" | awk -F': ' '/^    Signal/{print $2}' | tr -d '% ')
+        [[ -n "$sig" ]] && echo "$(( sig / 2 - 100 ))"
     else
-        # nmcli gives signal 0-100. Rough RSSI formula: RSSI = (Signal / 2) - 100
         local sig=$(echo "$_sp_data" | grep -m1 "^\*" | cut -d: -f8)
         [[ -n "$sig" ]] && echo "$(( sig / 2 - 100 ))"
     fi
@@ -262,6 +281,8 @@ get_noise() {
 get_channel() {
     if [[ "$OS" == "Darwin" ]]; then
         echo "$_sp_data" | awk '/Current Network Information:/ { f=1; next } f && /Channel:/ { sub(/.*: /, ""); print; exit }'
+    elif [[ "$OS" == "Windows" ]]; then
+        echo "$_sp_data" | awk -F': ' '/^    Channel/{print $2}' | tr -d ' '
     else
         echo "$_sp_data" | grep -m1 "^\*" | cut -d: -f5
     fi
@@ -270,6 +291,8 @@ get_channel() {
 get_tx_rate() {
     if [[ "$OS" == "Darwin" ]]; then
         echo "$_sp_data" | awk '/Current Network Information:/ { f=1; next } f && /Transmit Rate:/ { sub(/.*: /, ""); print; exit }'
+    elif [[ "$OS" == "Windows" ]]; then
+        echo "$_sp_data" | awk -F': ' '/^    Transmit rate/{print $2}' | tr -d ' '
     else
         echo "$_sp_data" | grep -m1 "^\*" | cut -d: -f6 | tr -d ' '
     fi
@@ -278,6 +301,8 @@ get_tx_rate() {
 get_security() {
     if [[ "$OS" == "Darwin" ]]; then
         echo "$_sp_data" | awk '/Current Network Information:/ { f=1; next } f && /Security:/ { sub(/.*: /, ""); print; exit }'
+    elif [[ "$OS" == "Windows" ]]; then
+        echo "$_sp_data" | awk -F': ' '/^    Authentication/{print $2}' | tr -d ' '
     else
         echo "$_sp_data" | grep -m1 "^\*" | cut -d: -f9
     fi
@@ -310,6 +335,8 @@ get_ping_latency() {
     local lat
     if [[ "$OS" == "Darwin" ]]; then
         lat=$(ping -c 1 -t 2 8.8.8.8 2>/dev/null | awk -F'/' '/avg/{print $5}')
+    elif [[ "$OS" == "Windows" ]]; then
+        lat=$(ping -n 1 -w 2000 8.8.8.8 2>/dev/null | awk -F'=' '/Average/ {print $3}' | tr -d 'ms\r ')
     else
         lat=$(ping -c 1 -W 2 8.8.8.8 2>/dev/null | awk -F'/' '/avg/{print $4}')
     fi
@@ -543,12 +570,17 @@ cmd_ping_monitor() {
         return 1
     fi
 
-    local ping_arg=""
-    [[ "$OS" == "Linux" ]] && ping_arg="-O" # Print failures on Linux
+    local ping_cmd="ping"
+    if [[ "$OS" == "Linux" ]]; then
+        ping_cmd="ping -O" # Print failures on Linux
+    elif [[ "$OS" == "Windows" ]]; then
+        ping_cmd="ping -t" # Continuous ping on Windows
+    fi
 
-    ping $ping_arg 8.8.8.8 | while read -r line; do
-        if echo "$line" | grep -q "time="; then
-            local time_ms; time_ms=$(echo "$line" | sed -n 's/.*time=\([0-9.]*\) ms.*/\1/p')
+    $ping_cmd 8.8.8.8 | while read -r line; do
+        if echo "$line" | grep -q "time=" || echo "$line" | grep -q "time<"; then
+            local time_ms; time_ms=$(echo "$line" | sed -n 's/.*time[=<]\([0-9.]*\)ms.*/\1/p')
+            [[ -z "$time_ms" ]] && time_ms=$(echo "$line" | sed -n 's/.*time[=<]\([0-9.]*\) ms.*/\1/p')
             local color="$BGRN"
             (( $(echo "$time_ms > 50" | bc -l 2>/dev/null || echo 0) )) && color="$YEL"
             (( $(echo "$time_ms > 150" | bc -l 2>/dev/null || echo 0) )) && color="$RED"
@@ -569,8 +601,10 @@ cmd_ping_monitor() {
 get_gateway_ip() {
     if [[ "$OS" == "Darwin" ]]; then
         route -n get default 2>/dev/null | awk '/gateway:/ {print $2}'
+    elif [[ "$OS" == "Windows" ]]; then
+        ipconfig 2>/dev/null | awk '/Default Gateway/ {print $NF}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | tr -d '\r' | head -n 1
     else
-        ip route show default 2>/dev/null | awk '/default/ {print $3}'
+        ip route 2>/dev/null | awk '/default/ {print $3}'
     fi
 }
 
@@ -656,6 +690,11 @@ is_daemon_running() {
 
 cmd_install() {
     echo -e "\n  ${BRAND}${BOLD}NetPulse · Install Service${RST}\n  ${DIM}$(repeat_char '─' 30)${RST}\n"
+    if [[ "$OS" == "Windows" ]]; then
+        echo -e "  ${YEL}⚠ Background Daemon is currently not supported on Windows Git Bash.${RST}"
+        echo -e "  ${DIM}Please use the manual 'netpulse' command or WSL.${RST}\n"
+        return 1
+    fi
     has_credentials || { echo -e "  ${RED}✗ Run: netpulse setup${RST}\n"; return 1; }
     local sp; sp="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 
@@ -728,7 +767,7 @@ cmd_setup() {
         echo -e "  ${DIM}Stored securely in $CRED_FILE (chmod 600).${RST}"
     fi
     echo ""
-    read -rp "$(echo -e "  ${BOLD}Username ${DIM}(e.g. 24BCE0605)${RST}${BOLD}: ")" wifi_user
+    read -rp "$(echo -e "  ${BOLD}Username ${DIM}(e.g. 24BCExxxx)${RST}${BOLD}: ")" wifi_user
     read -rsp "$(echo -e "  ${BOLD}Password${RST}${BOLD}: ")" wifi_pass; echo ""; echo ""
     read -rp "$(echo -e "  ${BOLD}Daily Data Limit in MB ${DIM}(leave blank for none)${RST}${BOLD}: ")" wifi_limit; echo ""
     
@@ -975,6 +1014,10 @@ cmd_logs() {
 }
 
 cmd_daemon() {
+    if [[ "$OS" == "Windows" ]]; then
+        echo -e "  ${YEL}⚠ Background Daemon is currently not supported on Windows Git Bash.${RST}\n"
+        return 1
+    fi
     log "━━━ Daemon started (v${VERSION}, interval=${CHECK_INTERVAL}s) ━━━"
     local fc=0
     while true; do
@@ -1135,6 +1178,21 @@ cmd_scan() {
                 if (( sig > -60 )); then q="Good"; c="$BGRN"; fi
                 if (( sig < -80 )); then q="Poor"; c="$BRED"; fi
                 printf "  %-20s ${c} %4s dBm ${RST} %s\n" "${ssid:0:20}" "$sig" "($q)"
+                found=1
+            fi
+        done <<< "$sorted"
+        
+    elif [[ "$OS" == "Windows" ]]; then
+        local raw; raw=$(netsh wlan show networks mode=bssid 2>/dev/null | tr -d '\r')
+        local sorted; sorted=$(echo "$raw" | awk '/SSID/ {ssid=$4; for(i=5;i<=NF;i++) ssid=ssid " " $i} /Signal/ {print ssid ":" $2}' | sort -t: -k2 -nr)
+        
+        while IFS=':' read -r ssid sig_pct; do
+            local sig=${sig_pct%\%}
+            if echo "$ssid" | grep -iq "vit" && [[ -n "$sig" ]]; then
+                local q="Fair"; local c="$YEL"
+                if (( sig > 70 )); then q="Good"; c="$BGRN"; fi
+                if (( sig < 30 )); then q="Poor"; c="$BRED"; fi
+                printf "  %-20s ${c} %4s %%  ${RST} %s\n" "${ssid:0:20}" "$sig" "($q)"
                 found=1
             fi
         done <<< "$sorted"
