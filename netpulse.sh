@@ -28,7 +28,7 @@ LAUNCHAGENT_LABEL="com.user.netpulse"
 LAUNCHAGENT_PLIST="$HOME/Library/LaunchAgents/${LAUNCHAGENT_LABEL}.plist"
 SYSTEMD_SERVICE="netpulse.service"
 MAX_LOG_LINES=1000
-VERSION="5.0.2"
+VERSION="5.0.3"
 SP_CACHE_FILE="/tmp/.netpulse-cache"
 
 OS=$(uname -s)
