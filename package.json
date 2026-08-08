@@ -1,9 +1,9 @@
 {
-  "name": "netpulse-wifi",
+  "name": "@ryanfer123/netpulse-wifi",
   "version": "5.0.0",
   "description": "Fast, zero-dependency campus WiFi auto-login",
   "bin": {
-    "netpulse": "./netpulse.sh"
+    "netpulse": "netpulse.sh"
   },
   "repository": {
     "type": "git",
@@ -14,5 +14,8 @@
   "bugs": {
     "url": "https://github.com/ryanfer123/NetPulse/issues"
   },
-  "homepage": "https://github.com/ryanfer123/NetPulse#readme"
+  "homepage": "https://github.com/ryanfer123/NetPulse#readme",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  }
 }
