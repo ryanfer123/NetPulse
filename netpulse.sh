@@ -1239,16 +1239,14 @@ cmd_diagnostics() {
     cmd_status
     echo ""
     echo -e "  ${BOLD}Run Diagnostics:${RST}"
-    echo -e "    ${BCYN}${BOLD}1${RST}  Smart WiFi Scanner"
-    echo -e "    ${BCYN}${BOLD}2${RST}  Run speed test"
-    echo -e "    ${BCYN}${BOLD}3${RST}  Live Ping Monitor"
+    echo -e "    ${BCYN}${BOLD}1${RST}  Run speed test"
+    echo -e "    ${BCYN}${BOLD}2${RST}  Live Ping Monitor"
     echo -e "    ${DIM}${BOLD}b${RST}  ${DIM}Skip${RST}\n"
     read -rp "$(echo -e "  ${BOLD}→ ${RST}")" diag_choice
     
     case "$diag_choice" in
-        1) cmd_scan; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
-        2) cmd_speedtest ;;
-        3) cmd_ping_monitor ;;
+        1) cmd_speedtest ;;
+        2) cmd_ping_monitor ;;
         *) return ;;
     esac
 }
@@ -1348,10 +1346,12 @@ B
         else
             echo -e "    ${BCYN}${BOLD}1${RST}  Manage Login & Credentials"
         fi
-        echo -e "    ${BCYN}${BOLD}2${RST}  Network Diagnostics"
-        echo -e "    ${BCYN}${BOLD}3${RST}  Live Dashboard"
-        echo -e "    ${BCYN}${BOLD}4${RST}  Data & Export"
-        echo -e "    ${BCYN}${BOLD}5${RST}  Background Service (Daemon)"
+        echo -e "    ${BCYN}${BOLD}2${RST}  Smart WiFi Scanner"
+        echo -e "    ${BCYN}${BOLD}3${RST}  Network Diagnostics"
+        echo -e "    ${BCYN}${BOLD}4${RST}  Live Dashboard"
+        echo -e "    ${BCYN}${BOLD}5${RST}  Data & Export"
+        echo -e "    ${BCYN}${BOLD}6${RST}  Background Service (Daemon)"
+        echo -e "    ${BCYN}${BOLD}7${RST}  Help & FAQ"
         echo ""
         echo -e "    ${DIM}${BOLD}q${RST}  ${DIM}Quit${RST}"
         echo ""
@@ -1360,10 +1360,12 @@ B
 
         case "$choice" in
             1) cmd_manage_login ;;
-            2) cmd_diagnostics ;;
-            3) cmd_dashboard ;;
-            4) cmd_manage_data ;;
-            5) cmd_manage_daemon ;;
+            2) cmd_scan; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
+            3) cmd_diagnostics ;;
+            4) cmd_dashboard ;;
+            5) cmd_manage_data ;;
+            6) cmd_manage_daemon ;;
+            7) cmd_help; cmd_faq; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
             q|Q|exit) echo -e "\n  ${DIM}Goodbye! 👋${RST}\n"; exit 0 ;;
             "") _refresh_sp_background ;;
             *) echo -e "  ${RED}Invalid.${RST}"; sleep 0.5 ;;
