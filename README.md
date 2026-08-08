@@ -56,7 +56,7 @@
 The easiest way to install NetPulse is globally via NPM:
 
 ```bash
-npm install -g @ryanfer123/netpulse-wifi
+npm install -g netpulse-wifi
 ```
 
 *(This allows you to run the `netpulse` command from anywhere in your terminal.)*
