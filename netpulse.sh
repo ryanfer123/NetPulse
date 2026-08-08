@@ -17,7 +17,6 @@ SERVICE_NAME="ProntoAuthentication"
 KEYCHAIN_SERVICE="netpulse-autologin"
 KEYCHAIN_ACCOUNT_USER="wifi-username"
 KEYCHAIN_ACCOUNT_PASS="wifi-password"
-KEYCHAIN_ACCOUNT_SSID="wifi-target-ssid"
 KEYCHAIN_ACCOUNT_DATALIMIT="wifi-data-limit"
 CRED_FILE="$HOME/.netpulse-credentials"
 CHECK_INTERVAL=60
@@ -28,7 +27,7 @@ LAUNCHAGENT_LABEL="com.user.netpulse"
 LAUNCHAGENT_PLIST="$HOME/Library/LaunchAgents/${LAUNCHAGENT_LABEL}.plist"
 SYSTEMD_SERVICE="netpulse.service"
 MAX_LOG_LINES=1000
-VERSION="5.0.3"
+VERSION="5.0.4"
 SP_CACHE_FILE="/tmp/.netpulse-cache"
 
 OS=$(uname -s)
@@ -66,12 +65,7 @@ notify() {
 }
 
 is_target_ssid() {
-    local s
-    IFS=',' read -ra ssid_array <<< "$TARGET_SSID"
-    for s in "${ssid_array[@]}"; do
-        [[ "$1" == "$s" ]] && return 0
-    done
-    return 1
+    return 0
 }
 
 # ── Human-readable byte formatting ─────────────────────────────────────────
@@ -159,8 +153,6 @@ has_credentials() {
 }
 
 # ── Load Config (must be after get_credential is defined) ───────────────────
-TARGET_SSID=$(get_credential "$KEYCHAIN_ACCOUNT_SSID" 2>/dev/null || true)
-[[ -z "$TARGET_SSID" ]] && TARGET_SSID="T-VIT"
 DATA_LIMIT=$(get_credential "$KEYCHAIN_ACCOUNT_DATALIMIT" 2>/dev/null || true)
 
 # ── Fast WiFi Info (ioreg / nmcli) ──────────────────────────────────────────
@@ -734,17 +726,13 @@ cmd_setup() {
     echo ""
     read -rp "$(echo -e "  ${BOLD}Username ${DIM}(e.g. 24BCE0605)${RST}${BOLD}: ")" wifi_user
     read -rsp "$(echo -e "  ${BOLD}Password${RST}${BOLD}: ")" wifi_pass; echo ""; echo ""
-    read -rp "$(echo -e "  ${BOLD}Target SSIDs ${DIM}(comma-separated, default: T-VIT)${RST}${BOLD}: ")" wifi_ssid; echo ""
     read -rp "$(echo -e "  ${BOLD}Daily Data Limit in MB ${DIM}(leave blank for none)${RST}${BOLD}: ")" wifi_limit; echo ""
     
     [[ -z "$wifi_user" || -z "$wifi_pass" ]] && { echo -e "  ${RED}✗ Username and Password cannot be empty.${RST}"; return 1; }
-    [[ -z "$wifi_ssid" ]] && wifi_ssid="T-VIT"
     
     store_credential "$KEYCHAIN_ACCOUNT_USER" "$wifi_user"
     store_credential "$KEYCHAIN_ACCOUNT_PASS" "$wifi_pass"
-    store_credential "$KEYCHAIN_ACCOUNT_SSID" "$wifi_ssid"
     store_credential "$KEYCHAIN_ACCOUNT_DATALIMIT" "$wifi_limit"
-    TARGET_SSID="$wifi_ssid"
     DATA_LIMIT="$wifi_limit"
     
     echo -e "  ${BGRN}${BOLD}✓ Setup complete!${RST}"; echo ""
@@ -761,7 +749,6 @@ cmd_login() {
     if [[ -z "$ssid" ]]; then
         echo -e "  ${RED}✗ Not connected to any WiFi.${RST}"; echo ""; return 0
     fi
-    is_target_ssid "$ssid" || { echo -e "  ${YEL}⚠  Not on a target network (${TARGET_SSID:-T-VIT}).${RST}"; echo ""; return 0; }
     has_internet && { echo -e "  ${BGRN}✓ Already online!${RST}"; echo ""; return 0; }
     echo -e "  ${YEL}⟳ Logging in...${RST}"; echo ""
     do_login && echo -e "  ${BGRN}${BOLD}✓ Connected!${RST}" || echo -e "  ${RED}${BOLD}✗ Failed.${RST}"
@@ -1129,52 +1116,41 @@ cmd_scan() {
     echo ""
     echo -e "  ${BRAND}${BOLD}NetPulse · Smart WiFi Scanner${RST}"
     echo -e "  ${DIM}$(repeat_char '─' 40)${RST}"
+    echo -e "  ${DIM}Scanning nearby networks...${RST}\n"
     
-    if [[ -z "$TARGET_SSID" ]]; then
-        echo -e "  ${YEL}⚠ No target networks configured. Run 'netpulse setup'.${RST}\n"
-        return
-    fi
-    
-    echo -e "  ${DIM}Scanning for: ${WHT}${TARGET_SSID}${DIM} ...${RST}\n"
-    
-    IFS=',' read -ra targets <<< "$TARGET_SSID"
     local found=0
     
     if [[ "$OS" == "Darwin" ]]; then
         local raw; raw=$(system_profiler SPAirPortDataType 2>/dev/null | awk -F':' '/^[ ]*[^:]+:$/ {ssid=$1; gsub(/^[ ]+/, "", ssid)} /Signal \/ Noise:/ {split($2, a, " "); print ssid ":" a[1]}')
-        local sorted; sorted=$(echo "$raw" | sort -t: -k2 -nr)
+        local sorted; sorted=$(echo "$raw" | sort -t: -k2 -nr | head -n 8)
         
-        for t in "${targets[@]}"; do
-            while IFS=':' read -r ssid sig; do
-                if [[ "$ssid" == "$t" && -n "$sig" ]]; then
-                    local q="Fair"; local c="$YEL"
-                    if (( sig > -60 )); then q="Good"; c="$BGRN"; fi
-                    if (( sig < -80 )); then q="Poor"; c="$BRED"; fi
-                    printf "  %-20s ${c} %4s dBm ${RST} %s\n" "$ssid" "$sig" "($q)"
-                    found=1
-                fi
-            done <<< "$sorted"
-        done
+        while IFS=':' read -r ssid sig; do
+            if [[ -n "$ssid" && -n "$sig" ]]; then
+                local q="Fair"; local c="$YEL"
+                if (( sig > -60 )); then q="Good"; c="$BGRN"; fi
+                if (( sig < -80 )); then q="Poor"; c="$BRED"; fi
+                printf "  %-20s ${c} %4s dBm ${RST} %s\n" "${ssid:0:20}" "$sig" "($q)"
+                found=1
+            fi
+        done <<< "$sorted"
         
     else
         local raw; raw=$(nmcli -t -f SSID,SIGNAL dev wifi 2>/dev/null)
-        local sorted; sorted=$(echo "$raw" | sort -t: -k2 -nr)
+        local sorted; sorted=$(echo "$raw" | sort -t: -k2 -nr | head -n 8)
         
-        for t in "${targets[@]}"; do
-            while IFS=':' read -r ssid sig; do
-                if [[ "$ssid" == "$t" && -n "$sig" ]]; then
-                    local q="Fair"; local c="$YEL"
-                    if (( sig > 70 )); then q="Good"; c="$BGRN"; fi
-                    if (( sig < 30 )); then q="Poor"; c="$BRED"; fi
-                    printf "  %-20s ${c} %4s %%  ${RST} %s\n" "$ssid" "$sig" "($q)"
-                    found=1
-                fi
-            done <<< "$sorted"
-        done
+        while IFS=':' read -r ssid sig; do
+            if [[ -n "$ssid" && -n "$sig" ]]; then
+                local q="Fair"; local c="$YEL"
+                if (( sig > 70 )); then q="Good"; c="$BGRN"; fi
+                if (( sig < 30 )); then q="Poor"; c="$BRED"; fi
+                printf "  %-20s ${c} %4s %%  ${RST} %s\n" "${ssid:0:20}" "$sig" "($q)"
+                found=1
+            fi
+        done <<< "$sorted"
     fi
     
     if [[ $found -eq 0 ]]; then
-        echo -e "  ${DIM}No campus networks found in range.${RST}"
+        echo -e "  ${DIM}No networks found in range.${RST}"
     else
         echo -e "\n  ${DIM}Tip: Connect to the network with the highest signal (Good)${RST}"
     fi
