@@ -1,5 +1,14 @@
-<h1 align="center">NetPulse - Fast, zero-dependency campus WiFi auto-login</h1>
+<h1 align="center">NetPulse</h1>
+<h3 align="center">Fast, zero-dependency campus WiFi auto-login</h3>
 
+<p align="center">
+<pre align="center">
+   _   _      _   ___      _          
+  | \ | | ___| |_| _ \_  _| |___ ___  
+  |  \| |/ -_)  _|  _/ || | (_-&lt;/ -_) 
+  |_|\_|\___|\__|_|   \_,_|_/__/\___| 
+</pre>
+</p>
 <p align="center">
   <b>NetPulse</b> is an easy to use & powerful network utility.<br>
   Automate captive portal logins, monitor your connection, and track your data usage right from the terminal.
@@ -30,9 +39,12 @@
 
 ### Features
 - **Auto-Login Daemon**: Runs in the background (LaunchAgent on macOS, systemd on Linux). Automatically handles captive portals so you never see a login page.
+- **Multi-Network Support**: Seamlessly switch between multiple campus WiFi networks (e.g. `T-VIT`, `M-VIT`) with the same credentials.
 - **Fast Status Dashboard**: Real-time stats on your WiFi signal, SNR, channel, data usage, and latency.
+- **Live Ping Monitor**: Trace packet loss and latency spikes in real-time.
 - **Speed Test**: Built-in CLI speed test (using Cloudflare CDN) without requiring external packages.
-- **Data Usage Tracking**: View daily download/upload totals directly from the network interface counters.
+- **Data Usage & History**: View daily download/upload totals and a 7-day historical sparkline graph directly from network interface counters.
+- **Data Limits**: Get desktop notifications when you exceed a daily data limit.
 - **Cross-Platform**: Zero external dependencies. Uses native system tools (`networksetup`, `ioreg`, `system_profiler` on macOS; `nmcli`, `ip` on Linux).
 
 ### Installation
@@ -62,11 +74,36 @@ Run `netpulse` to open the interactive menu, or use direct commands:
 
 ```bash
 netpulse                # Open interactive menu
+netpulse setup          # Store credentials & target networks
+netpulse login          # One-shot portal login
 netpulse status         # Print detailed network status
-netpulse dashboard      # Open live-updating network monitor
 netpulse speedtest      # Run a quick ping/download/upload test
-netpulse data           # View data usage statistics
+netpulse ping           # Live connection monitor
+netpulse data           # View data usage stats & history
+netpulse dashboard      # Open live-updating network monitor
 netpulse install        # Install the auto-login background daemon
 netpulse uninstall      # Remove the background daemon
 netpulse logs           # View logs from the background daemon
+netpulse faq            # Troubleshooting & common questions
 ```
+
+### FAQ
+
+**Q: I connect to different networks across campus.**  
+**A:** During setup, enter all network names separated by commas: `T-VIT,M-VIT`. NetPulse will auto-login on any of them.
+
+**Q: Where are my credentials stored?**  
+**A:** On macOS, they are stored securely in the native **Keychain** (encrypted). On Linux, they are stored in `~/.netpulse-credentials` with `chmod 600` (only your user can read it).
+
+**Q: Login shows "Failed" or "HTTP 000".**  
+**A:** This usually means one of:
+- You're not on the campus WiFi (e.g. mobile hotspot).
+- The portal server `10.10.0.1` is unreachable.
+- Your credentials are wrong.
+- The campus network is genuinely down.
+
+**Q: It says "Offline" but I have internet.**  
+**A:** NetPulse checks Google, Apple, and Cloudflare to detect internet. Some networks or hotspots may block these. Try running `netpulse status` for a detailed check.
+
+**Q: What is the daily data limit?**  
+**A:** During setup, you can set a limit in MB (e.g. `500`). The daemon will send a desktop notification when you exceed it. Leave blank during setup to disable.
