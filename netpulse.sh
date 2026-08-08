@@ -982,20 +982,108 @@ cmd_daemon() {
     done
 }
 
+cmd_faq() {
+    echo -e "\n  ${BOLD}${WHT}❓ FREQUENTLY ASKED QUESTIONS${RST}"
+    echo -e "  ${DIM}$(repeat_char '─' 50)${RST}\n"
+
+    echo -e "  ${BOLD}Q: How do I set up NetPulse for the first time?${RST}"
+    echo -e "  ${DIM}A:${RST} Run ${BCYN}netpulse setup${RST}. Enter your VIT registration"
+    echo -e "     number (e.g. ${WHT}24BCE0605${RST}) as the username, your WiFi"
+    echo -e "     password, and the network name you connect to (e.g."
+    echo -e "     ${WHT}T-VIT${RST}). Then run ${BCYN}netpulse install${RST} to enable"
+    echo -e "     automatic background login.\n"
+
+    echo -e "  ${BOLD}Q: I connect to different networks across campus.${RST}"
+    echo -e "  ${DIM}A:${RST} During setup, enter all network names separated by"
+    echo -e "     commas: ${WHT}T-VIT,M-VIT,T block,M block${RST}"
+    echo -e "     NetPulse will auto-login on any of them.\n"
+
+    echo -e "  ${BOLD}Q: How do I change my saved password or SSID?${RST}"
+    echo -e "  ${DIM}A:${RST} Just run ${BCYN}netpulse setup${RST} again. It will overwrite"
+    echo -e "     the old values.\n"
+
+    echo -e "  ${BOLD}Q: Where are my credentials stored?${RST}"
+    if [[ "$OS" == "Darwin" ]]; then
+        echo -e "  ${DIM}A:${RST} In the macOS Keychain (encrypted). Open ${WHT}Keychain"
+        echo -e "     Access${RST} and search for ${WHT}netpulse-autologin${RST} to view.\n"
+    else
+        echo -e "  ${DIM}A:${RST} In ${WHT}~/.netpulse-credentials${RST} with ${WHT}chmod 600${RST}"
+        echo -e "     (only your user can read it).\n"
+    fi
+
+    echo -e "  ${BOLD}Q: What is the background daemon / service?${RST}"
+    echo -e "  ${DIM}A:${RST} It runs silently, checking every 60s if you're on a"
+    echo -e "     target network without internet. If so, it auto-logs"
+    echo -e "     you in. It starts on boot automatically.\n"
+
+    echo -e "  ${BOLD}Q: How do I start/stop/check the daemon?${RST}"
+    echo -e "  ${DIM}A:${RST} ${BCYN}netpulse install${RST}   → Install & start"
+    echo -e "     ${BCYN}netpulse uninstall${RST} → Stop & remove"
+    echo -e "     ${BCYN}netpulse status${RST}    → See if it's running\n"
+
+    echo -e "  ${BOLD}Q: Login shows \"Failed\" or \"HTTP 000\".${RST}"
+    echo -e "  ${DIM}A:${RST} This usually means one of:"
+    echo -e "     ${DIM}•${RST} You're not on the campus WiFi (e.g. mobile hotspot)"
+    echo -e "     ${DIM}•${RST} The portal server ${WHT}10.10.0.1${RST} is unreachable"
+    echo -e "     ${DIM}•${RST} Your credentials are wrong → re-run ${BCYN}netpulse setup${RST}"
+    echo -e "     ${DIM}•${RST} The campus network is genuinely down\n"
+
+    echo -e "  ${BOLD}Q: It says \"Offline\" but I have internet.${RST}"
+    echo -e "  ${DIM}A:${RST} NetPulse checks Google, Apple, and Cloudflare to"
+    echo -e "     detect internet. Some networks or hotspots may block"
+    echo -e "     these. Try ${BCYN}netpulse status${RST} for a detailed check.\n"
+
+    echo -e "  ${BOLD}Q: What is the daily data limit?${RST}"
+    echo -e "  ${DIM}A:${RST} During setup, you can set a limit in MB (e.g. ${WHT}500${RST})."
+    echo -e "     The daemon will send a desktop notification when you"
+    echo -e "     exceed it. Leave blank during setup to disable.\n"
+
+    echo -e "  ${BOLD}Q: How do I completely uninstall NetPulse?${RST}"
+    echo -e "  ${DIM}A:${RST} Run these commands:"
+    echo -e "     ${BCYN}netpulse uninstall${RST}"
+    echo -e "     ${DIM}rm -f ~/.netpulse-autologin.log${RST}"
+    echo -e "     ${DIM}rm -f ~/.netpulse-data-usage.dat${RST}"
+    echo -e "     ${DIM}rm -f ~/.netpulse-history.dat${RST}"
+    if [[ "$OS" == "Darwin" ]]; then
+        echo -e "     Then remove keychain entries in Keychain Access"
+        echo -e "     (search for ${WHT}netpulse-autologin${RST}).\n"
+    else
+        echo -e "     ${DIM}rm -f ~/.netpulse-credentials${RST}\n"
+    fi
+}
+
 cmd_help() {
     echo -e "\n${BRAND}${BOLD}"
     cat << 'B'
    _   _      _   ___      _          
   | \ | | ___| |_| _ \_  _| |___ ___  
   |  \| |/ -_)  _|  _/ || | (_-</ -_) 
-  |_|\_|\___|\__|_|   \_,_|_/__/\___| 
+  |_|\_|\___|\___|_|   \_,_|_/__/\___| 
 B
     echo -e "${RST}\n  ${DIM}v${VERSION}${RST}\n"
-    printf "  ${BCYN}%-14s${RST} %s\n" "setup" "Store credentials" "login" "One-shot login" \
-        "status" "Full network status" "speedtest" "Download/upload speed test" \
+
+    echo -e "  ${BOLD}${WHT}🚀 QUICK START${RST}"
+    echo -e "  ${DIM}$(repeat_char '─' 50)${RST}"
+    echo -e "  ${DIM}1.${RST} Run ${BCYN}netpulse setup${RST} to save your VIT credentials"
+    echo -e "  ${DIM}2.${RST} Run ${BCYN}netpulse login${RST} to connect to the campus portal"
+    echo -e "  ${DIM}3.${RST} Run ${BCYN}netpulse install${RST} to auto-login in the background"
+    echo -e "  ${DIM}4.${RST} Done! NetPulse handles everything from here.\n"
+
+    echo -e "  ${BOLD}${WHT}📋 COMMANDS${RST}"
+    echo -e "  ${DIM}$(repeat_char '─' 50)${RST}"
+    printf "  ${BCYN}%-14s${RST} %s\n" \
+        "setup" "Store credentials & target networks" \
+        "login" "One-shot portal login" \
+        "status" "Full network status" \
+        "speedtest" "Download/upload speed test" \
         "ping" "Live connection monitor" \
-        "data" "Data usage stats" "dashboard" "Live monitoring" "logs" "View logs" \
-        "install" "Background service" "uninstall" "Remove service" "help" "This help"
+        "data" "Data usage stats & history" \
+        "dashboard" "Live monitoring dashboard" \
+        "logs" "View daemon logs" \
+        "install" "Install background service" \
+        "uninstall" "Remove background service" \
+        "faq" "Troubleshooting & common questions" \
+        "help" "This help page"
     echo ""
 }
 
@@ -1151,6 +1239,7 @@ case "${1:-}" in
     uninstall|--uninstall)   cmd_uninstall ;;
     daemon|--daemon|-d)      cmd_daemon ;;
     help|--help|-h)          cmd_help ;;
+    faq|--faq)               cmd_faq ;;
     "")                      cmd_interactive ;;
     *) echo -e "  ${RED}Unknown: $1${RST}  ${DIM}— netpulse help${RST}"; exit 1 ;;
 esac
