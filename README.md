@@ -52,16 +52,22 @@
 - **Cross-Platform**: Zero external dependencies. Uses native system tools (`networksetup`, `ioreg`, `system_profiler` on macOS; `nmcli`, `ip` on Linux).
 
 ### Installation
-Clone the repository and make the script executable:
+
+The easiest way to install NetPulse is globally via NPM:
+
+```bash
+npm install -g netpulse-wifi
+```
+
+*(This allows you to run the `netpulse` command from anywhere in your terminal.)*
+
+**Manual Installation (No Node/NPM required):**
+If you don't have Node installed, you can simply clone and link the bash script:
 
 ```bash
 git clone https://github.com/ryanfer123/NetPulse.git
 cd NetPulse
-
-# Make it executable
 chmod +x netpulse.sh
-
-# Install globally
 mkdir -p ~/.local/bin
 ln -sf $(pwd)/netpulse.sh ~/.local/bin/netpulse
 ```
