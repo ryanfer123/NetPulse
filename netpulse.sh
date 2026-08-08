@@ -28,7 +28,7 @@ LAUNCHAGENT_LABEL="com.user.netpulse"
 LAUNCHAGENT_PLIST="$HOME/Library/LaunchAgents/${LAUNCHAGENT_LABEL}.plist"
 SYSTEMD_SERVICE="netpulse.service"
 MAX_LOG_LINES=1000
-VERSION="4.0.1"
+VERSION="5.0.0"
 SP_CACHE_FILE="/tmp/.netpulse-cache"
 
 OS=$(uname -s)
@@ -1052,6 +1052,129 @@ cmd_faq() {
     fi
 }
 
+cmd_logout() {
+    echo ""
+    echo -e "  ${BRAND}${BOLD}NetPulse · Captive Portal Logout${RST}"
+    echo -e "  ${DIM}$(repeat_char '─' 32)${RST}"
+    echo -e "  ${DIM}Terminating session...${RST}"
+    curl -s "http://phc.prontonetworks.com/cgi-bin/authlogout" -o /dev/null
+    echo -e "  ${BGRN}✓ Logged out successfully.${RST}"
+    echo -e "  ${DIM}You can now connect another device.${RST}"
+    echo ""
+}
+
+cmd_export() {
+    echo ""
+    echo -e "  ${BRAND}${BOLD}NetPulse · Data Export${RST}"
+    echo -e "  ${DIM}$(repeat_char '─' 32)${RST}"
+    local out_file="$HOME/Desktop/NetPulse_Usage_Report.csv"
+    echo "Date,Bytes,Formatted" > "$out_file"
+    if [[ -f "$DATA_HISTORY" ]]; then
+        while read -r date bytes; do
+            echo "$date,$bytes,$(format_bytes "$bytes")" >> "$out_file"
+        done < "$DATA_HISTORY"
+        echo -e "  ${BGRN}✓ Exported to Desktop!${RST}"
+        echo -e "  ${DIM}File: ~/Desktop/NetPulse_Usage_Report.csv${RST}"
+    else
+        echo -e "  ${YEL}⚠ No historical data found yet.${RST}"
+    fi
+    echo ""
+}
+
+cmd_scan() {
+    echo ""
+    echo -e "  ${BRAND}${BOLD}NetPulse · Smart WiFi Scanner${RST}"
+    echo -e "  ${DIM}$(repeat_char '─' 40)${RST}"
+    
+    if [[ -z "$TARGET_SSID" ]]; then
+        echo -e "  ${YEL}⚠ No target networks configured. Run 'netpulse setup'.${RST}\n"
+        return
+    fi
+    
+    echo -e "  ${DIM}Scanning for: ${WHT}${TARGET_SSID}${DIM} ...${RST}\n"
+    
+    IFS=',' read -ra targets <<< "$TARGET_SSID"
+    local found=0
+    
+    if [[ "$OS" == "Darwin" ]]; then
+        local raw; raw=$(system_profiler SPAirPortDataType 2>/dev/null | awk -F':' '/^[ ]*[^:]+:$/ {ssid=$1; gsub(/^[ ]+/, "", ssid)} /Signal \/ Noise:/ {split($2, a, " "); print ssid ":" a[1]}')
+        local sorted; sorted=$(echo "$raw" | sort -t: -k2 -nr)
+        
+        for t in "${targets[@]}"; do
+            while IFS=':' read -r ssid sig; do
+                if [[ "$ssid" == "$t" && -n "$sig" ]]; then
+                    local q="Fair"; local c="$YEL"
+                    if (( sig > -60 )); then q="Good"; c="$BGRN"; fi
+                    if (( sig < -80 )); then q="Poor"; c="$BRED"; fi
+                    printf "  %-20s ${c} %4s dBm ${RST} %s\n" "$ssid" "$sig" "($q)"
+                    found=1
+                fi
+            done <<< "$sorted"
+        done
+        
+    else
+        local raw; raw=$(nmcli -t -f SSID,SIGNAL dev wifi 2>/dev/null)
+        local sorted; sorted=$(echo "$raw" | sort -t: -k2 -nr)
+        
+        for t in "${targets[@]}"; do
+            while IFS=':' read -r ssid sig; do
+                if [[ "$ssid" == "$t" && -n "$sig" ]]; then
+                    local q="Fair"; local c="$YEL"
+                    if (( sig > 70 )); then q="Good"; c="$BGRN"; fi
+                    if (( sig < 30 )); then q="Poor"; c="$BRED"; fi
+                    printf "  %-20s ${c} %4s %%  ${RST} %s\n" "$ssid" "$sig" "($q)"
+                    found=1
+                fi
+            done <<< "$sorted"
+        done
+    fi
+    
+    if [[ $found -eq 0 ]]; then
+        echo -e "  ${DIM}No campus networks found in range.${RST}"
+    else
+        echo -e "\n  ${DIM}Tip: Connect to the network with the highest signal (Good)${RST}"
+    fi
+    echo ""
+}
+
+cmd_menubar() {
+    local is_online=0
+    if has_internet; then is_online=1; fi
+    
+    if [[ $is_online -eq 1 ]]; then
+        echo "NetPulse: ● | color=green"
+    else
+        echo "NetPulse: ● | color=red"
+    fi
+    echo "---"
+    
+    local current_ssid="Disconnected"
+    if [[ "$OS" == "Darwin" ]]; then
+        current_ssid=$(networksetup -getairportnetwork en0 2>/dev/null | awk -F': ' '{print $2}')
+    else
+        current_ssid=$(nmcli -t -f ACTIVE,SSID dev wifi 2>/dev/null | awk -F':' '/^yes/ {print $2}')
+    fi
+    [[ -z "$current_ssid" ]] && current_ssid="Unknown"
+    
+    echo "SSID: $current_ssid"
+    
+    local today; today=$(date +%Y-%m-%d)
+    local usage_bytes=0
+    if [[ -f "$DATA_FILE" ]]; then
+        local file_date; file_date=$(head -n 1 "$DATA_FILE" | cut -d' ' -f1)
+        if [[ "$file_date" == "$today" ]]; then
+            usage_bytes=$(head -n 1 "$DATA_FILE" | cut -d' ' -f2)
+        fi
+    fi
+    echo "Data Today: $(format_bytes "$usage_bytes")"
+    
+    echo "---"
+    local script_path; script_path="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    echo "Login Now | bash='$script_path' param1=login terminal=false"
+    echo "Open Dashboard | bash='$script_path' param1=dashboard terminal=true"
+    echo "Export Data | bash='$script_path' param1=export terminal=true"
+}
+
 cmd_help() {
     echo -e "\n${BRAND}${BOLD}"
     cat << 'B'
@@ -1074,14 +1197,18 @@ B
     printf "  ${BCYN}%-14s${RST} %s\n" \
         "setup" "Store credentials & target networks" \
         "login" "One-shot portal login" \
+        "logout" "Disconnect from captive portal" \
         "status" "Full network status" \
+        "scan" "Smart WiFi Scanner" \
         "speedtest" "Download/upload speed test" \
         "ping" "Live connection monitor" \
         "data" "Data usage stats & history" \
+        "export" "Export data usage to CSV" \
         "dashboard" "Live monitoring dashboard" \
         "logs" "View daemon logs" \
         "install" "Install background service" \
         "uninstall" "Remove background service" \
+        "menubar" "Print macOS/Linux menubar plugin code" \
         "faq" "Troubleshooting & common questions" \
         "help" "This help page"
     echo ""
@@ -1092,12 +1219,14 @@ cmd_manage_login() {
     if has_credentials; then
         echo -e "\n  ${BRAND}${BOLD}NetPulse · Login Management${RST}\n"
         echo -e "    ${BCYN}${BOLD}1${RST}  Login now"
-        echo -e "    ${BCYN}${BOLD}2${RST}  Reconfigure credentials"
+        echo -e "    ${BCYN}${BOLD}2${RST}  Logout (Disconnect)"
+        echo -e "    ${BCYN}${BOLD}3${RST}  Reconfigure credentials"
         echo -e "    ${DIM}${BOLD}b${RST}  ${DIM}Back${RST}\n"
         read -rp "$(echo -e "  ${BOLD}→ ${RST}")" sub_choice
         case "$sub_choice" in
             1) cmd_login; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
-            2) cmd_setup; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
+            2) cmd_logout; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
+            3) cmd_setup; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
             *) return ;;
         esac
     else
@@ -1110,14 +1239,29 @@ cmd_diagnostics() {
     cmd_status
     echo ""
     echo -e "  ${BOLD}Run Diagnostics:${RST}"
-    echo -e "    ${BCYN}${BOLD}1${RST}  Run speed test"
-    echo -e "    ${BCYN}${BOLD}2${RST}  Live Ping Monitor"
+    echo -e "    ${BCYN}${BOLD}1${RST}  Smart WiFi Scanner"
+    echo -e "    ${BCYN}${BOLD}2${RST}  Run speed test"
+    echo -e "    ${BCYN}${BOLD}3${RST}  Live Ping Monitor"
     echo -e "    ${DIM}${BOLD}b${RST}  ${DIM}Skip${RST}\n"
     read -rp "$(echo -e "  ${BOLD}→ ${RST}")" diag_choice
     
     case "$diag_choice" in
-        1) cmd_speedtest ;;
-        2) cmd_ping_monitor ;;
+        1) cmd_scan; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
+        2) cmd_speedtest ;;
+        3) cmd_ping_monitor ;;
+        *) return ;;
+    esac
+}
+
+cmd_manage_data() {
+    echo -e "\n  ${BRAND}${BOLD}NetPulse · Data & Usage${RST}\n"
+    echo -e "    ${BCYN}${BOLD}1${RST}  View Data Usage Stats & History"
+    echo -e "    ${BCYN}${BOLD}2${RST}  Export Data to CSV (Desktop)"
+    echo -e "    ${DIM}${BOLD}b${RST}  ${DIM}Back${RST}\n"
+    read -rp "$(echo -e "  ${BOLD}→ ${RST}")" sub_choice
+    case "$sub_choice" in
+        1) show_data_usage; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
+        2) cmd_export; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
         *) return ;;
     esac
 }
@@ -1206,7 +1350,8 @@ B
         fi
         echo -e "    ${BCYN}${BOLD}2${RST}  Network Diagnostics"
         echo -e "    ${BCYN}${BOLD}3${RST}  Live Dashboard"
-        echo -e "    ${BCYN}${BOLD}4${RST}  Background Service (Daemon)"
+        echo -e "    ${BCYN}${BOLD}4${RST}  Data & Export"
+        echo -e "    ${BCYN}${BOLD}5${RST}  Background Service (Daemon)"
         echo ""
         echo -e "    ${DIM}${BOLD}q${RST}  ${DIM}Quit${RST}"
         echo ""
@@ -1215,9 +1360,10 @@ B
 
         case "$choice" in
             1) cmd_manage_login ;;
-            2) cmd_diagnostics; echo -e "  ${DIM}Press Enter...${RST}"; read -r ;;
+            2) cmd_diagnostics ;;
             3) cmd_dashboard ;;
-            4) cmd_manage_daemon ;;
+            4) cmd_manage_data ;;
+            5) cmd_manage_daemon ;;
             q|Q|exit) echo -e "\n  ${DIM}Goodbye! 👋${RST}\n"; exit 0 ;;
             "") _refresh_sp_background ;;
             *) echo -e "  ${RED}Invalid.${RST}"; sleep 0.5 ;;
@@ -1229,6 +1375,10 @@ B
 case "${1:-}" in
     setup|--setup|-s)        cmd_setup ;;
     login|--login|-l)        cmd_login ;;
+    logout|--logout)         cmd_logout ;;
+    scan|--scan)             cmd_scan ;;
+    export|--export)         cmd_export ;;
+    menubar|--menubar)       cmd_menubar ;;
     status|--status)         cmd_status ;;
     speedtest|--speedtest)   cmd_speedtest ;;
     ping|--ping)             cmd_ping_monitor ;;

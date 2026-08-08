@@ -39,6 +39,10 @@
 
 ### Features
 - **Auto-Login Daemon**: Runs in the background (LaunchAgent on macOS, systemd on Linux). Automatically handles captive portals so you never see a login page.
+- **Menu Bar Plugin**: Generate a macOS (SwiftBar) or Linux (Argos) plugin to view status, switch networks, and see data usage straight from the menu bar!
+- **Captive Portal Logout**: Log out your current session so you can connect your phone or iPad to the campus WiFi without hitting the device limit.
+- **Smart WiFi Scanner**: Scan nearby access points and get recommendations on the strongest network to connect to.
+- **Data Export**: Export your historical data usage to a CSV file for Excel/Numbers.
 - **Multi-Network Support**: Seamlessly switch between multiple campus WiFi networks (e.g. `T-VIT`, `M-VIT`) with the same credentials.
 - **Fast Status Dashboard**: Real-time stats on your WiFi signal, SNR, channel, data usage, and latency.
 - **Live Ping Monitor**: Trace packet loss and latency spikes in real-time.
@@ -76,14 +80,18 @@ Run `netpulse` to open the interactive menu, or use direct commands:
 netpulse                # Open interactive menu
 netpulse setup          # Store credentials & target networks
 netpulse login          # One-shot portal login
+netpulse logout         # Disconnect from captive portal
 netpulse status         # Print detailed network status
+netpulse scan           # Smart WiFi Scanner
 netpulse speedtest      # Run a quick ping/download/upload test
 netpulse ping           # Live connection monitor
 netpulse data           # View data usage stats & history
+netpulse export         # Export data usage to CSV
 netpulse dashboard      # Open live-updating network monitor
 netpulse install        # Install the auto-login background daemon
 netpulse uninstall      # Remove the background daemon
 netpulse logs           # View logs from the background daemon
+netpulse menubar        # Print macOS/Linux menubar plugin code
 netpulse faq            # Troubleshooting & common questions
 ```
 
