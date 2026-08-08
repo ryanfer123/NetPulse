@@ -12,7 +12,7 @@ set -uo pipefail
 
 # ── Configuration ───────────────────────────────────────────────────────────
 PORTAL_URL="http://phc.prontonetworks.com/cgi-bin/authlogin"
-REDIRECT_URI="http://captive.apple.com/hotspot-detect.html"
+REDIRECT_URI="http://example.com"
 SERVICE_NAME="ProntoAuthentication"
 KEYCHAIN_SERVICE="netpulse-autologin"
 KEYCHAIN_ACCOUNT_USER="wifi-username"
@@ -570,6 +570,14 @@ cmd_ping_monitor() {
 }
 
 # ── Login ───────────────────────────────────────────────────────────────────
+get_gateway_ip() {
+    if [[ "$OS" == "Darwin" ]]; then
+        route -n get default 2>/dev/null | awk '/gateway:/ {print $2}'
+    else
+        ip route show default 2>/dev/null | awk '/default/ {print $3}'
+    fi
+}
+
 do_login() {
     local username password
     username=$(get_credential "$KEYCHAIN_ACCOUNT_USER") || true
@@ -578,30 +586,56 @@ do_login() {
 
     log "Attempting login as '$username'..."
     local response body http_code
+    local target_url="${PORTAL_URL}"
+    
     response=$(curl -s -m 10 -w '\n%{http_code}' \
-        -X POST "${PORTAL_URL}?URI=${REDIRECT_URI}" \
+        -X POST "${target_url}?URI=${REDIRECT_URI}" \
         -H 'Content-Type: application/x-www-form-urlencoded' \
-        -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' \
-        -H "Referer: http://phc.prontonetworks.com/" \
+        -H 'User-Agent: Mozilla/5.0 (Android)' \
         --data-urlencode "userId=${username}" \
         --data-urlencode "password=${password}" \
         --data-urlencode "serviceName=${SERVICE_NAME}" \
-        --data-urlencode "Submit22=Login" \
         2>/dev/null) || true
 
     http_code=$(echo "$response" | tail -1)
+    
+    # Fallback to Gateway IP if DNS resolution failed (HTTP 000)
+    if [[ "$http_code" == "000" ]]; then
+        local gw; gw=$(get_gateway_ip)
+        if [[ -n "$gw" ]]; then
+            log "DNS resolution failed. Retrying with Gateway IP: $gw..."
+            target_url="http://${gw}/cgi-bin/authlogin"
+            response=$(curl -s -m 10 -w '\n%{http_code}' \
+                -X POST "${target_url}?URI=${REDIRECT_URI}" \
+                -H 'Content-Type: application/x-www-form-urlencoded' \
+                -H 'User-Agent: Mozilla/5.0 (Android)' \
+                --data-urlencode "userId=${username}" \
+                --data-urlencode "password=${password}" \
+                --data-urlencode "serviceName=${SERVICE_NAME}" \
+                2>/dev/null) || true
+            http_code=$(echo "$response" | tail -1)
+        fi
+    fi
+
     body=$(echo "$response" | sed '$d')
 
-    if echo "$body" | grep -qi "Access Granted\|successfully connected\|success"; then
-        log_success "Login successful!"; notify "✅ WiFi connected"; return 0
-    elif echo "$body" | grep -qi "already logged in\|already authenticated"; then
-        log_success "Already logged in."; return 0
+    if [[ "$http_code" == "301" || "$http_code" == "302" ]]; then
+        log_success "Login successful (Redirect $http_code)."
+        notify "✅ WiFi connected"
+        return 0
+    elif echo "$body" | grep -qi "access granted\|you have successfully connected\|already logged in\|http-equiv=\"refresh\"\|http://example.com"; then
+        log_success "Login successful!"
+        notify "✅ WiFi connected"
+        return 0
     elif echo "$body" | grep -qi "invalid\|incorrect\|wrong\|denied\|failed"; then
-        log_error "Login failed — invalid credentials."; notify "❌ Login failed"; return 1
+        log_error "Login failed — invalid credentials."
+        notify "❌ Login failed"
+        return 1
     else
         sleep 2
         has_internet && { log_success "Login OK (verified)."; notify "✅ WiFi connected"; return 0; }
-        log_warn "Login unclear (HTTP $http_code)."; return 1
+        log_warn "Login unclear (HTTP $http_code)."
+        return 1
     fi
 }
 
@@ -1057,7 +1091,17 @@ cmd_logout() {
     echo -e "  ${BRAND}${BOLD}NetPulse · Captive Portal Logout${RST}"
     echo -e "  ${DIM}$(repeat_char '─' 32)${RST}"
     echo -e "  ${DIM}Terminating session...${RST}"
-    curl -s "http://phc.prontonetworks.com/cgi-bin/authlogout" -o /dev/null
+    
+    local http_code
+    http_code=$(curl -s -m 5 -w '%{http_code}' "http://phc.prontonetworks.com/cgi-bin/authlogout" -o /dev/null) || true
+    
+    if [[ "$http_code" == "000" ]]; then
+        local gw; gw=$(get_gateway_ip)
+        if [[ -n "$gw" ]]; then
+            curl -s -m 5 "http://${gw}/cgi-bin/authlogout" -o /dev/null || true
+        fi
+    fi
+    
     echo -e "  ${BGRN}✓ Logged out successfully.${RST}"
     echo -e "  ${DIM}You can now connect another device.${RST}"
     echo ""
