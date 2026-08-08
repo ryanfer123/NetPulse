@@ -13,10 +13,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Setup .npmrc file to publish to GitHub Packages
+      # 1. Publish to Public NPM Registry
       - uses: actions/setup-node@v4
         with:
           node-version: '20.x'
           registry-url: 'https://registry.npmjs.org'
-      - run: npm publish
+      - name: Publish to NPM
+        run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # 2. Publish to GitHub Packages
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://npm.pkg.github.com'
+      - name: Publish to GitHub Packages
+        run: |
+          npm pkg set name="@${{ github.repository_owner }}/netpulse-wifi"
+          npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
