@@ -1,5 +1,5 @@
 {
-  "name": "@ryanfer123/netpulse-wifi",
+  "name": "netpulse-wifi",
   "version": "5.0.2",
   "description": "Fast, zero-dependency campus WiFi auto-login",
   "bin": {
