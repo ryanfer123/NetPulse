@@ -33,12 +33,7 @@ SP_CACHE_FILE="/tmp/.netpulse-cache"
 
 OS=$(uname -s)
 
-# Load target SSID from credentials, fallback to T-VIT
-TARGET_SSID=$(get_credential "$KEYCHAIN_ACCOUNT_SSID" 2>/dev/null || true)
-[[ -z "$TARGET_SSID" ]] && TARGET_SSID="T-VIT"
-
-# Load data limit from credentials
-DATA_LIMIT=$(get_credential "$KEYCHAIN_ACCOUNT_DATALIMIT" 2>/dev/null || true)
+# NOTE: TARGET_SSID and DATA_LIMIT are loaded after get_credential() is defined below.
 
 # ── ANSI Colors ─────────────────────────────────────────────────────────────
 RST='\033[0m'; BOLD='\033[1m'; DIM='\033[2m'
@@ -162,6 +157,11 @@ get_credential() {
 has_credentials() {
     get_credential "$KEYCHAIN_ACCOUNT_USER" >/dev/null 2>&1 && get_credential "$KEYCHAIN_ACCOUNT_PASS" >/dev/null 2>&1
 }
+
+# ── Load Config (must be after get_credential is defined) ───────────────────
+TARGET_SSID=$(get_credential "$KEYCHAIN_ACCOUNT_SSID" 2>/dev/null || true)
+[[ -z "$TARGET_SSID" ]] && TARGET_SSID="T-VIT"
+DATA_LIMIT=$(get_credential "$KEYCHAIN_ACCOUNT_DATALIMIT" 2>/dev/null || true)
 
 # ── Fast WiFi Info (ioreg / nmcli) ──────────────────────────────────────────
 get_ssid_fast() {
@@ -993,6 +993,7 @@ B
     echo -e "${RST}\n  ${DIM}v${VERSION}${RST}\n"
     printf "  ${BCYN}%-14s${RST} %s\n" "setup" "Store credentials" "login" "One-shot login" \
         "status" "Full network status" "speedtest" "Download/upload speed test" \
+        "ping" "Live connection monitor" \
         "data" "Data usage stats" "dashboard" "Live monitoring" "logs" "View logs" \
         "install" "Background service" "uninstall" "Remove service" "help" "This help"
     echo ""
