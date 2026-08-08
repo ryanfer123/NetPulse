@@ -27,7 +27,7 @@ LAUNCHAGENT_LABEL="com.user.netpulse"
 LAUNCHAGENT_PLIST="$HOME/Library/LaunchAgents/${LAUNCHAGENT_LABEL}.plist"
 SYSTEMD_SERVICE="netpulse.service"
 MAX_LOG_LINES=1000
-VERSION="5.0.5"
+VERSION="5.0.6"
 SP_CACHE_FILE="/tmp/.netpulse-cache"
 
 OS=$(uname -s)
@@ -65,13 +65,10 @@ notify() {
 }
 
 is_target_ssid() {
-    # Hardcoded VIT networks to keep it zero-config
-    local targets="VIT,VIT-WiFi,T-VIT,VIT2.4G,VIT5G,VIT-Hostels"
-    local s
-    IFS=',' read -ra ssid_array <<< "$targets"
-    for s in "${ssid_array[@]}"; do
-        [[ "$1" == "$s" ]] && return 0
-    done
+    # Match any SSID containing "VIT" or "vit"
+    if echo "$1" | grep -iq "vit"; then
+        return 0
+    fi
     return 1
 }
 
@@ -1126,41 +1123,35 @@ cmd_scan() {
     echo -e "  ${DIM}$(repeat_char '─' 40)${RST}"
     echo -e "  ${DIM}Scanning for VIT networks...${RST}\n"
     
-    local targets="VIT,VIT-WiFi,T-VIT,VIT2.4G,VIT5G,VIT-Hostels"
-    IFS=',' read -ra target_array <<< "$targets"
     local found=0
     
     if [[ "$OS" == "Darwin" ]]; then
         local raw; raw=$(system_profiler SPAirPortDataType 2>/dev/null | awk -F':' '/^[ ]*[^:]+:$/ {ssid=$1; gsub(/^[ ]+/, "", ssid)} /Signal \/ Noise:/ {split($2, a, " "); print ssid ":" a[1]}')
         local sorted; sorted=$(echo "$raw" | sort -t: -k2 -nr)
         
-        for t in "${target_array[@]}"; do
-            while IFS=':' read -r ssid sig; do
-                if [[ "$ssid" == "$t" && -n "$sig" ]]; then
-                    local q="Fair"; local c="$YEL"
-                    if (( sig > -60 )); then q="Good"; c="$BGRN"; fi
-                    if (( sig < -80 )); then q="Poor"; c="$BRED"; fi
-                    printf "  %-20s ${c} %4s dBm ${RST} %s\n" "$ssid" "$sig" "($q)"
-                    found=1
-                fi
-            done <<< "$sorted"
-        done
+        while IFS=':' read -r ssid sig; do
+            if echo "$ssid" | grep -iq "vit" && [[ -n "$sig" ]]; then
+                local q="Fair"; local c="$YEL"
+                if (( sig > -60 )); then q="Good"; c="$BGRN"; fi
+                if (( sig < -80 )); then q="Poor"; c="$BRED"; fi
+                printf "  %-20s ${c} %4s dBm ${RST} %s\n" "${ssid:0:20}" "$sig" "($q)"
+                found=1
+            fi
+        done <<< "$sorted"
         
     else
         local raw; raw=$(nmcli -t -f SSID,SIGNAL dev wifi 2>/dev/null)
         local sorted; sorted=$(echo "$raw" | sort -t: -k2 -nr)
         
-        for t in "${target_array[@]}"; do
-            while IFS=':' read -r ssid sig; do
-                if [[ "$ssid" == "$t" && -n "$sig" ]]; then
-                    local q="Fair"; local c="$YEL"
-                    if (( sig > 70 )); then q="Good"; c="$BGRN"; fi
-                    if (( sig < 30 )); then q="Poor"; c="$BRED"; fi
-                    printf "  %-20s ${c} %4s %%  ${RST} %s\n" "$ssid" "$sig" "($q)"
-                    found=1
-                fi
-            done <<< "$sorted"
-        done
+        while IFS=':' read -r ssid sig; do
+            if echo "$ssid" | grep -iq "vit" && [[ -n "$sig" ]]; then
+                local q="Fair"; local c="$YEL"
+                if (( sig > 70 )); then q="Good"; c="$BGRN"; fi
+                if (( sig < 30 )); then q="Poor"; c="$BRED"; fi
+                printf "  %-20s ${c} %4s %%  ${RST} %s\n" "${ssid:0:20}" "$sig" "($q)"
+                found=1
+            fi
+        done <<< "$sorted"
     fi
     
     if [[ $found -eq 0 ]]; then
