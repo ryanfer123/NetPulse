@@ -3,15 +3,16 @@
 
 <p align="center">
 <pre align="center">
-   _   _      _   ___      _          
-  | \ | | ___| |_| _ \_  _| |___ ___  
-  |  \| |/ -_)  _|  _/ || | (_-&lt;/ -_) 
-  |__|\_|\___|\__|_|  \_,_|_/__/\___| 
+  _   _      _   ___      _          
+ | \ | | ___| |_| _ \_  _| |___ ___  
+ |  \| |/ -_)  _|  _/ || | (_-&lt;/ -_) 
+ |_|\_|\___|\___|_|   \_,_|_/__/\___| 
 </pre>
 </p>
 <p align="center">
   <b>NetPulse</b> is an easy to use & powerful network utility.<br>
-  Automate captive portal logins, monitor your connection, and track your data usage right from the terminal.
+  Automate captive portal logins, monitor your connection, and track your data usage right from the terminal.<br><br>
+  <i><b>Note:</b> This tool is specifically built for VIT students to authenticate with the campus Pronto networks.</i>
 </p>
 
 <p align="center">

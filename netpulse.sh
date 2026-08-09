@@ -1,9 +1,9 @@
 #!/bin/bash
 # ============================================================================
-#    _   _      _   ___       _          
-#   | \ | | ___| |_| _ \_  _ | |___ ___  
-#   |  \| |/ -_)  _|  _/\ || | (_-</ -_) 
-#   |_|\__|\___|\__|_|   \_,_|_/__/\___| 
+#   _   _      _   ___      _          
+#  | \ | | ___| |_| _ \_  _| |___ ___  
+#  |  \| |/ -_)  _|  _/ || | (_-</ -_) 
+#  |_|\_|\___|\___|_|   \_,_|_/__/\___| 
 #
 #  NetPulse Campus WiFi Auto-Login CLI
 # ============================================================================
@@ -27,7 +27,7 @@ LAUNCHAGENT_LABEL="com.user.netpulse"
 LAUNCHAGENT_PLIST="$HOME/Library/LaunchAgents/${LAUNCHAGENT_LABEL}.plist"
 SYSTEMD_SERVICE="netpulse.service"
 MAX_LOG_LINES=1000
-VERSION="5.0.8"
+VERSION="5.0.9"
 SP_CACHE_FILE="/tmp/.netpulse-cache"
 
 OS=$(uname -s)
@@ -590,7 +590,17 @@ do_login() {
 
     # DNS Security Check (Ported from Latch)
     # If the captive portal domain does not resolve, we are not on the campus network.
-    if ! host phc.prontonetworks.com >/dev/null 2>&1; then
+    local resolves=false
+    if [[ "$OS" == "Darwin" ]]; then
+        # macOS has `host` built-in and always available
+        host phc.prontonetworks.com >/dev/null 2>&1 && resolves=true
+    else
+        # Linux standard is `getent`, avoiding `host` since bind-utils might not be installed,
+        # and avoiding `ping` because campus firewalls might drop ICMP packets causing false failures.
+        getent hosts phc.prontonetworks.com >/dev/null 2>&1 && resolves=true
+    fi
+
+    if [[ "$resolves" == "false" ]]; then
         log_warn "Portal host does not resolve; refusing to log in to prevent credential leak."
         if [[ -t 1 ]]; then echo -e "  ${YEL}⚠ Portal host unreachable. Are you sure you are on campus?${RST}"; fi
         return 1
