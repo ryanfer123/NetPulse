@@ -1,9 +1,9 @@
 #!/bin/bash
 # ============================================================================
-#    _   _      _   ___      _          
-#   | \ | | ___| |_| _ \_  _| |___ ___  
-#   |  \| |/ -_)  _|  _/ || | (_-</ -_) 
-#   |_|\_|\___|\__|_|   \_,_|_/__/\___| 
+#    _   _      _   ___       _          
+#   | \ | | ___| |_| _ \_  _ | |___ ___  
+#   |  \| |/ -_)  _|  _/\ || | (_-</ -_) 
+#   |_|\__|\___|\__|_|   \_,_|_/__/\___| 
 #
 #  NetPulse Campus WiFi Auto-Login CLI
 # ============================================================================
@@ -65,8 +65,8 @@ notify() {
 }
 
 is_target_ssid() {
-    # Match any SSID containing "VIT" or "vit"
-    if echo "$1" | grep -iq "vit"; then
+    # Match only campus SSIDs (e.g., T-VIT, M-VIT, G-VIT)
+    if echo "$1" | grep -iqE "^[a-z]-vit"; then
         return 0
     fi
     return 1
@@ -588,6 +588,14 @@ do_login() {
     log "Attempting login as '$username'..."
     local response body http_code
 
+    # DNS Security Check (Ported from Latch)
+    # If the captive portal domain does not resolve, we are not on the campus network.
+    if ! host phc.prontonetworks.com >/dev/null 2>&1; then
+        log_warn "Portal host does not resolve; refusing to log in to prevent credential leak."
+        if [[ -t 1 ]]; then echo -e "  ${YEL}⚠ Portal host unreachable. Are you sure you are on campus?${RST}"; fi
+        return 1
+    fi
+
     # Start a spinner in background for visual feedback
     local spin_pid=""
     if [[ -t 1 ]]; then
@@ -616,7 +624,22 @@ do_login() {
 
     http_code=$(echo "$response" | tail -1)
     
-    # Fallback to Gateway IP if DNS resolution failed (HTTP 000)
+    # Fallback 1: Try HTTPS (Ported from Latch)
+    if [[ "$http_code" == "000" ]]; then
+        log "HTTP failed. Retrying with HTTPS..."
+        target_url="https://phc.prontonetworks.com/cgi-bin/authlogin"
+        response=$(curl -s -k -m 10 -w '\n%{http_code}' \
+            -X POST "${target_url}?URI=${REDIRECT_URI}" \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            -H 'User-Agent: Mozilla/5.0 (Android)' \
+            --data-urlencode "userId=${username}" \
+            --data-urlencode "password=${password}" \
+            --data-urlencode "serviceName=${SERVICE_NAME}" \
+            2>/dev/null) || true
+        http_code=$(echo "$response" | tail -1)
+    fi
+
+    # Fallback 2: Try Gateway IP if DNS resolution completely blocked
     if [[ "$http_code" == "000" ]]; then
         local gw; gw=$(get_gateway_ip)
         if [[ -n "$gw" ]]; then
@@ -890,7 +913,7 @@ cmd_dashboard() {
    _   _      _   ___      _          
   | \ | | ___| |_| _ \_  _| |___ ___  
   |  \| |/ -_)  _|  _/ || | (_-</ -_) 
-  |_|\_|\___|\__|_|   \_,_|_/__/\___| 
+  |_|\_|\___|\___|_|   \_,_|_/__/\___| 
 H
         echo -e "${RST}"
         echo -e "  ${DIM}Live Dashboard${RST}  ${DIM}v${VERSION}${RST}  ${DIM}│${RST}  ${DIM}$(short_time)${RST}"
@@ -1347,7 +1370,7 @@ cmd_interactive() {
    _   _      _   ___      _          
   | \ | | ___| |_| _ \_  _| |___ ___  
   |  \| |/ -_)  _|  _/ || | (_-</ -_) 
-  |_|\_|\___|\__|_|   \_,_|_/__/\___| 
+  |_|\_|\___|\___|_|   \_,_|_/__/\___| 
 B
         echo -e "${RST}\n  ${DIM}v${VERSION}${RST}\n"
 
