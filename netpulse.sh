@@ -165,7 +165,17 @@ DATA_LIMIT=$(get_credential "$KEYCHAIN_ACCOUNT_DATALIMIT" 2>/dev/null || true)
 # ── Fast WiFi Info (ioreg / nmcli) ──────────────────────────────────────────
 get_ssid_fast() {
     if [[ "$OS" == "Darwin" ]]; then
-        /System/Library/PrivateFrameworks/Apple80211.framework/Resources/airport -I 2>/dev/null | awk -F': ' '/ SSID/{print $2}'
+        # Try ipconfig (fast, works on modern macOS)
+        local iface; iface=$(get_wifi_interface)
+        local ssid=""
+        if [[ -n "$iface" ]]; then
+            ssid=$(ipconfig getsummary "$iface" 2>/dev/null | awk -F': ' '/  SSID /{print $2}')
+        fi
+        # Fallback: system_profiler (slower but always reliable)
+        if [[ -z "$ssid" ]]; then
+            ssid=$(system_profiler SPAirPortDataType 2>/dev/null | awk '/Current Network Information:/ {f=1; next} f && /^            [^ ]/ {gsub(/[: ]+$/, ""); gsub(/^  +/, ""); print; exit}')
+        fi
+        echo "$ssid"
     elif [[ "$OS" == "Windows" ]]; then
         netsh wlan show interfaces 2>/dev/null | awk -F': ' '/^    SSID/{print $2}' | tr -d '\r'
     else
