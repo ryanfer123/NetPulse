@@ -587,6 +587,22 @@ do_login() {
 
     log "Attempting login as '$username'..."
     local response body http_code
+
+    # Start a spinner in background for visual feedback
+    local spin_pid=""
+    if [[ -t 1 ]]; then
+        (
+            local frames=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+            local i=0
+            while true; do
+                printf "\r  ${YEL}${frames[$i]} Authenticating...${RST}" >&2
+                i=$(( (i+1) % ${#frames[@]} ))
+                sleep 0.1
+            done
+        ) &
+        spin_pid=$!
+    fi
+
     local target_url="${PORTAL_URL}"
     
     response=$(curl -s -m 10 -w '\n%{http_code}' \
@@ -618,6 +634,12 @@ do_login() {
         fi
     fi
 
+    # Stop the spinner
+    if [[ -n "$spin_pid" ]]; then
+        kill "$spin_pid" 2>/dev/null; wait "$spin_pid" 2>/dev/null
+        printf "\r%-40s\r" " " >&2
+    fi
+
     body=$(echo "$response" | sed '$d')
 
     if [[ "$http_code" == "301" || "$http_code" == "302" ]]; then
@@ -647,6 +669,7 @@ do_check_and_login() {
     is_target_ssid "$ssid" || return 0
     has_internet && return 0
     log "Captive portal detected on '$ssid'."
+    notify "🔄 Connecting to $ssid..."
     do_login
 }
 
